@@ -1,0 +1,841 @@
+#!/usr/bin/env python
+'''
+
+aj.py - main script for Agent-Jones web-service
+
+Agent-Jones is a web-service used retrieve info from and configure Cisco devices.
+Mostly switches, but it could as well be used for routers. It is the back-end part of
+Magic-Button and other nice front-ends we are developing.
+
+Author : Ch. Bueche
+Repository : FIXME
+Documentation : FIXME
+
+'''
+
+# -----------------------------------------------------------------------------------
+# initialization
+# -----------------------------------------------------------------------------------
+
+from flask import Flask, url_for, make_response, jsonify, send_from_directory, request
+from flask import render_template
+from flask.json import loads
+
+from flask.ext import restful
+from flask.ext.restful import reqparse
+
+from flask.ext.httpauth import HTTPBasicAuth
+auth = HTTPBasicAuth()
+
+import time
+from datetime import datetime
+from random import randint
+import os
+import sys
+import ConfigParser
+import netaddr
+
+import autovivification
+import credentials
+import utils
+import access_checks
+
+# Snimpy SNMP lib and MIB loading
+from snimpy.manager import Manager as M
+from snimpy.manager import load
+
+# find where we are to create the correct path to the MIBs below
+full_path = os.path.realpath(__file__)
+script_path = os.path.split(full_path)[0]
+mib_path = script_path + '/mibs/'
+
+# base MIB
+# load("/usr/share/snmp/mibs/IANAifType-MIB.txt")
+load(mib_path + "IANAifType-MIB.my")
+load(mib_path + "IF-MIB.my")
+load(mib_path + "SNMPv2-MIB.my")
+
+# entity, for serial-#
+load(mib_path + "ENTITY-MIB.my")
+
+# Cisco stacks
+load(mib_path + "CISCO-SMI.my")
+load(mib_path + "CISCO-TC.my")
+load(mib_path + "CISCO-STACKWISE-MIB.my")
+
+# for config writes
+load(mib_path + "CISCO-ST-TC.my")
+load(mib_path + "CISCO-CONFIG-COPY-MIB.my")
+
+# for VLANs
+load(mib_path + "CISCO-VTP-MIB.my")
+load(mib_path + "CISCO-VLAN-MEMBERSHIP-MIB.my")
+
+# for Mac collection
+load(mib_path + "BRIDGE-MIB.my")
+
+
+
+# -----------------------------------------------------------------------------------
+# collect the API dynamic documentation
+# -----------------------------------------------------------------------------------
+class DocCollection():
+
+    apidoc = autovivification.AutoVivification()
+
+    def add(self, stanza, uri, methods):
+
+        name = stanza['name']
+        self.apidoc[name]['description'] = stanza['description']
+        self.apidoc[name]['uri']         = uri
+        self.apidoc[name]['methods']     = methods
+        self.apidoc[name]['auth']        = stanza['auth']
+        self.apidoc[name]['auth-type']   = stanza['auth-type']
+        self.apidoc[name]['params']      = stanza['params']
+        self.apidoc[name]['returns']     = stanza['returns']
+
+
+
+# -----------------------------------------------------------------------------------
+# GET on a single device
+# -----------------------------------------------------------------------------------
+class DeviceAPI(restful.Resource):
+    __doc__ = '''{
+        "name": "DeviceAPI", 
+        "description": "GET info from a single device.", 
+        "auth": true,
+        "auth-type": "BasicAuth",
+        "params": [],
+        "returns": "A lot of device attributes."
+    }'''
+    decorators = [auth.login_required]
+
+    def get(self, devicename):
+
+        logger.debug('fn=DeviceAPI/get : %s' % devicename)
+
+        tstart = datetime.now()
+
+        deviceinfo = autovivification.AutoVivification()
+        deviceinfo['name']      = devicename
+
+        logger.debug('fn=DeviceAPI/get : creating the snimpy manager')
+        ro_community = credmgr.get_credentials(devicename)['ro_community']
+        if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
+            return {'error': 'SNMP test failed'}, 404
+
+        m = M(host = devicename, community = ro_community, version = 2, timeout=2, retries=2, none=True)
+        deviceinfo['sysName'] = m.sysName
+        logger.debug('fn=DeviceAPI/get : request device info')
+        deviceinfo['sysDescr']    = m.sysDescr
+        deviceinfo['sysContact']  = m.sysContact
+        deviceinfo['sysLocation'] = m.sysLocation
+        deviceinfo['sysObjectID'] = str(m.sysObjectID)
+        deviceinfo['sysUpTime']   = int(m.sysUpTime) / 100
+
+        logger.debug('fn=DeviceAPI/get : get serial numbers')
+        deviceinfo['entities'] = self.get_serial(m)
+
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds + tdiff.days * 24 * 3600) * 10**6) / 1000
+        deviceinfo['query-duration'] = duration
+
+        logger.info('fn=DeviceAPI/get : duration=%s' % deviceinfo['query-duration'])
+        return deviceinfo
+
+
+    def get_serial(self, m):
+        ''' get the serial numbers using the Entity-MIB
+            https://raw.github.com/vincentbernat/snimpy/master/examples/get-serial.py
+
+            return a list of entries, as we might have a stacked switch configuration
+        '''
+        # first, find out if the switch is stacked :
+        # when working, use 0 for non stack and 1 for stacks in the top-parent search below
+        max_switches = m.cswMaxSwitchNum
+        # logger.debug("stack cswMaxSwitchNum=%s" % max_switches)
+
+        if max_switches is not None:
+            parent_search_stop_at = 1
+        else:
+            parent_search_stop_at = 0
+
+        hardware_info = []
+        parent = None
+        for i in m.entPhysicalContainedIn:
+            if m.entPhysicalContainedIn[i] == parent_search_stop_at:
+                parent = i
+                hardware_info.append({  
+                    'physicalDescr':        m.entPhysicalDescr[parent],
+                    'physicalHardwareRev':  m.entPhysicalHardwareRev[parent],
+                    'physicalFirmwareRev':  m.entPhysicalFirmwareRev[parent],
+                    'physicalSoftwareRev':  m.entPhysicalSoftwareRev[parent],
+                    'physicalSerialNum':    m.entPhysicalSerialNum[parent],
+                    'physicalName':         m.entPhysicalName[parent]
+                })
+        if parent is None:
+            log.warn("could not get an entity parent in get_serial")
+        return hardware_info
+
+
+
+# -----------------------------------------------------------------------------------
+# PUT on a single device : save the running-config to startup-config
+# -----------------------------------------------------------------------------------
+class DeviceSaveAPI(restful.Resource):
+    '''
+    {
+        "name": "DeviceSaveAPI", 
+        "description": "save the running-config to startup-config", 
+        "auth": true,
+        "auth-type": "BasicAuth",
+        "params": [],
+        "returns": "status info"
+    }
+    '''
+    decorators = [auth.login_required]
+
+    def put(self, devicename):
+
+        logger.info('fn=DeviceSaveAPI/put : %s' % devicename)
+
+        tstart = datetime.now()
+
+        rw_community = credmgr.get_credentials(devicename)['rw_community']
+      
+        if not check.check_snmp(logger, M, devicename, rw_community, 'RW'):
+            return {'error': 'SNMP test failed'}, 404
+
+        logger.debug('fn=DeviceSaveAPI/get : creating the snimpy manager')
+        m = M(host = devicename, community = rw_community, version = 2, timeout=2, retries=2, none=True)
+
+        # random operation index
+        opidx = randint(1, 1000)
+        logger.debug('fn=DeviceSaveAPI/put : operation %d' % opidx)
+
+        # some devices will for sure fail, so catch them
+        try:
+            # set the source to be the running-config
+            logger.debug('fn=DeviceSaveAPI/put : operation %d : set the source to be the running-config' % opidx)
+            m.ccCopySourceFileType[opidx] = 4
+            # set the dest to be the startup-config
+            logger.debug('fn=DeviceSaveAPI/put : operation %d : set the dest to be the startup-config' % opidx)
+            m.ccCopyDestFileType[opidx] = 3
+            # start the transfer
+            logger.debug('fn=DeviceSaveAPI/put : operation %d : start the transfer' % opidx)
+            m.ccCopyEntryRowStatus[opidx] = 1
+
+            write_timeout = 10
+            waited = 0
+            while(waited < write_timeout):
+                waited += 0.5
+                state = m.ccCopyState[opidx]
+                if state == 3 or state == 4:
+                    break
+                logger.debug("fn=DeviceSaveAPI/put : operation %d : waiting for config save to finish" % opidx)
+                time.sleep(0.5)
+
+            logger.debug("fn=DeviceSaveAPI/put : operation %d : waited=%s seconds" % (opidx, waited))
+
+            # check
+            if m.ccCopyState == 4:
+                # failure
+                cause = m.ConfigCopyFailCause
+                logger.error("fn=DeviceSaveAPI/put : operation %d : copy failed, cause = %s" % (cause, opidx))
+                return {'error': 'config save for %s failed' % devicename, 'message': '%s' % cause, 'operation-nr': opidx}
+            else:
+                # success
+                logger.info("fn=DeviceSaveAPI/put : operation %d : copy successful" % opidx)
+
+            # delete op
+            logger.debug("fn=DeviceSaveAPI/put : operation %d : clear operation" % opidx)
+            m.ccCopyEntryRowStatus[opidx] = 6
+
+        except Exception, e:
+            logger.error("fn=DeviceSaveAPI/put : copy failed : %s" % e)
+            return {'error': 'fn=DeviceSaveAPI/put : copy failed : %s' % e}, 404
+
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds + tdiff.days * 24 * 3600) * 10**6) / 1000
+
+        logger.info('fn=DeviceSaveAPI/put : duration=%s' % duration)
+        return {'info': 'config save for %s successful' % devicename, 'duration': duration, 'operation-nr': opidx}
+
+
+
+# -----------------------------------------------------------------------------------
+# GET interfaces from a device
+# -----------------------------------------------------------------------------------
+class InterfaceAPI(restful.Resource):
+    __doc__ = '''{
+        "name": "InterfaceAPI", 
+        "description": "GET interfaces from a device. Adding ?showmac=1 to the URI will list the MAC addresses of devices connected to ports. Be aware that it makes the query much slower. Adding ?showvlannames=1 will show the vlan names for each vlan. It will as well make the query slower.", 
+        "auth": true,
+        "auth-type": "BasicAuth",
+        "params": [],
+        "returns": "A list of device interfaces."
+    }'''
+    decorators = [auth.login_required]
+
+    def get(self, devicename):
+
+        logger.debug('fn=InterfaceAPI/get : %s' % devicename)
+
+        tstart = datetime.now()
+
+        # two possible query parameters
+        showmac = request.args.get('showmac', 0)
+        showvlannames = request.args.get('showvlannames', 0)
+
+        ro_community = credmgr.get_credentials(devicename)['ro_community']
+        if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
+            return {'error': 'SNMP test failed'}, 404
+
+        deviceinfo = autovivification.AutoVivification()
+        deviceinfo['name']      = devicename
+
+        logger.debug('fn=InterfaceAPI/get : creating the snimpy manager')
+        m = M(host = devicename, community = ro_community, version = 2, timeout=2, retries=2, none=True)
+        deviceinfo['sysName'] = m.sysName
+
+        # get the mac list
+        if showmac:
+            macAPI = MacAPI()
+            macs = macAPI.get_macs_from_device(devicename, m, ro_community)
+
+        if showvlannames:
+            vlanAPI = vlanlistAPI()
+            vlans = vlanAPI.get_vlans(devicename, m, ro_community)
+
+        logger.debug('fn=DeviceAPI/get : get interface info')
+        interfaces = []
+        for index in m.ifDescr:
+            interface = {}
+            logger.debug('fn=DeviceAPI/get : get interface info for index %s' % (index))
+            interface['index']                                         = index
+            interface['ifAdminStatus'], interface['ifAdminStatusText'] = util.translate_status(str(m.ifAdminStatus[index]))
+            interface['ifOperStatus'], interface['ifOperStatusText']   = util.translate_status(str(m.ifOperStatus[index]))
+            interface['ifType']                                        = str(m.ifType[index])
+            interface['ifMtu']                                         = m.ifMtu[index]
+            interface['ifSpeed']                                       = m.ifSpeed[index]
+            interface['ifDescr']                                       = str(m.ifDescr[index])
+            interface['ifAlias']                                       = str(m.ifAlias[index])
+            vlan_nr = m.vmVlan[index]
+            if showvlannames:
+                if vlan_nr in vlans:
+                    vlan_name = vlans[vlan_nr]['name']
+                else:
+                    vlan_name = ''
+                # lookup table for VLAN names
+                interface['vmVlanNative']                                  = {'nr': vlan_nr, 'name': vlan_name}
+            else:
+                interface['vmVlanNative']                                  = {'nr': vlan_nr, 'name': ''}
+            if showmac:
+                if index in macs:
+                    interface['macs']                                      = macs[index]
+                else:
+                    interface['macs'] = []
+            interfaces.append(interface)
+        deviceinfo['interfaces'] = interfaces
+
+
+        # FIXME : an interface could belong to many VLANs when trunking.
+        # in Netdisco, named "VLAN Membership". The Native VLAN is now done using vmVlan,
+        # the listing of secondary VLANs is not implemented yet
+
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds + tdiff.days * 24 * 3600) * 10**6) / 1000
+        deviceinfo['query-duration'] = duration
+
+        logger.info('fn=InterfaceAPI/get : duration=%s' % deviceinfo['query-duration'])
+        return deviceinfo
+
+
+
+# -----------------------------------------------------------------------------------
+# GET interfaces counters of one interface
+# -----------------------------------------------------------------------------------
+class InterfaceCounterAPI(restful.Resource):
+    __doc__ = '''{
+        "name": "InterfaceCounterAPI", 
+        "description": "GET interface counters of one interface", 
+        "auth": true,
+        "auth-type": "BasicAuth",
+        "params": [],
+        "returns": "A list of interfaces counters."
+    }'''
+    decorators = [auth.login_required]
+
+    def get(self, devicename, ifindex):
+
+        logger.debug('fn=InterfaceCounterAPI/get : %s/%s' % (devicename, ifindex))
+
+        tstart = datetime.now()
+
+        ro_community = credmgr.get_credentials(devicename)['ro_community']
+        if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
+            return {'error': 'SNMP test failed'}, 404
+
+        deviceinfo = autovivification.AutoVivification()
+        deviceinfo['name']      = devicename
+
+        logger.debug('fn=InterfaceCounterAPI/get : creating the snimpy manager')
+        m = M(host = devicename, community = ro_community, version = 2, timeout=2, retries=2, none=True)
+        deviceinfo['sysName'] = m.sysName
+        deviceinfo['interface'] = str(m.ifDescr[ifindex])
+
+        logger.debug('fn=InterfaceCounterAPI/get : get interface counters')
+        counters = {}
+        counters['ifHCInOctets'] = m.ifHCInOctets[ifindex]
+        counters['ifHCOutOctets'] = m.ifHCOutOctets[ifindex]
+        counters['ifInErrors'] = m.ifInErrors[ifindex]
+        counters['ifOutErrors'] = m.ifOutErrors[ifindex]
+        deviceinfo['counters'] = counters
+
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds + tdiff.days * 24 * 3600) * 10**6) / 1000
+        deviceinfo['query-duration'] = duration
+
+        logger.info('fn=InterfaceCounterAPI/get : duration=%s' % deviceinfo['query-duration'])
+        return deviceinfo
+
+
+
+# -----------------------------------------------------------------------------------
+# GET MAC(ethernet) to port mappings from a device
+# -----------------------------------------------------------------------------------
+class MacAPI(restful.Resource):
+    __doc__ = '''{
+        "name": "MacAPI", 
+        "description": "MAC(ethernet) to port mappings from a device", 
+        "auth": true,
+        "auth-type": "BasicAuth",
+        "params": [],
+        "returns": "A list of MAC addresses indexed by ifIndex."
+    }'''
+    decorators = [auth.login_required]
+
+    def get(self, devicename):
+    #-------------------------
+        logger.debug('fn=MacAPI/get : %s' % devicename)
+
+        tstart = datetime.now()
+
+        ro_community = credmgr.get_credentials(devicename)['ro_community']
+        if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
+            return {'error': 'SNMP test failed'}, 404
+
+        deviceinfo = autovivification.AutoVivification()
+        deviceinfo['name']      = devicename
+
+        logger.debug('fn=InterfaceAPI/get : creating the snimpy manager')
+        m = M(host = devicename, community = ro_community, version = 2, timeout=2, retries=2, none=True)
+        deviceinfo['sysName'] = m.sysName
+
+        macs = self.get_macs_from_device(devicename, m, ro_community)
+
+        macs_organized = []
+        for ifindex in macs:
+            entry = {}
+            entry["index"] = ifindex
+            maclist = macs[ifindex]
+            entry["macs"] = maclist
+            macs_organized.append(entry)
+
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds + tdiff.days * 24 * 3600) * 10**6) / 1000
+        deviceinfo['query-duration'] = duration
+
+        logger.info('fn=MacAPI/get : duration=%s' % duration)
+        deviceinfo['macs'] = macs_organized
+        return deviceinfo
+
+
+    # we create a dict indexed by ifIndex,
+    # it's then easier when having to enrich an interface info when knowing the ifIndex
+    def get_macs_from_device(self, devicename, m, ro_community):
+    #-------------------------
+        logger.debug('fn=MacAPI/get_macs_from_device : %s' % devicename)
+        macs = {}
+
+        for entry in m.vtpVlanName:
+            vlan_nr = entry[1]
+            vlan_type = m.vtpVlanType[entry]
+            vlan_state = m.vtpVlanState[entry]
+            vlan_name = m.vtpVlanName[entry]
+
+            # only ethernet VLANs
+            if vlan_type == 'ethernet' and vlan_state == 'operational':
+                logger.debug('fn=MacAPI/get_macs_from_device : polling vlan %s (%s)' % (vlan_nr, vlan_name))
+
+                # VLAN-based community, have a local manager for each VLAN
+                vlan_community = "%s@%s" % (ro_community, vlan_nr)
+                lm = M(host=devicename, community=vlan_community, version=2, timeout=2, retries=2, none=True)
+
+                for mac_entry in lm.dot1dTpFdbAddress:
+                    port = lm.dot1dTpFdbPort[mac_entry]
+                    ifindex = lm.dot1dBasePortIfIndex[port]
+
+                    # lookup vendor from OUI database
+                    mac = netaddr.EUI(mac_entry)
+                    vendor = mac.oui.registration().org
+
+                    mac_record = {'mac': str(mac), 'vendor': vendor}
+                    if ifindex in macs:
+                        macs[ifindex].append(mac_record)
+                    else:
+                        macs[ifindex] = [mac_record]
+
+        return macs
+
+
+
+# -----------------------------------------------------------------------------------
+# GET vlan list from a device
+# -----------------------------------------------------------------------------------
+class vlanlistAPI(restful.Resource):
+    __doc__ = '''{
+        "name": "vlanlistAPI", 
+        "description": "GET vlan list from a device", 
+        "auth": true,
+        "auth-type": "BasicAuth",
+        "params": [],
+        "returns": "A list of vlans for a device."
+    }'''
+    decorators = [auth.login_required]
+
+    def get(self, devicename):
+
+        logger.debug('fn=vlanlistAPI/get : %s' % devicename)
+
+        tstart = datetime.now()
+
+        ro_community = credmgr.get_credentials(devicename)['ro_community']
+        if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
+            return {'error': 'SNMP test failed'}, 404
+
+        deviceinfo = autovivification.AutoVivification()
+        deviceinfo['name'] = devicename
+
+        logger.debug('fn=vlanlistAPI/get : creating the snimpy manager')
+
+        m = M(host = devicename, community = ro_community, version = 2, timeout=2, retries=2, none=True)
+        deviceinfo['sysName'] = m.sysName
+
+        logger.debug('fn=vlanlistAPI/get : get vlan list')
+        vlans_lookup_table = self.get_vlans(devicename, m, ro_community)
+
+        vlans = []
+        for entry in vlans_lookup_table:
+            vlan = {}
+            vlan['nr'] = entry
+            vlan['type'] = vlans_lookup_table[entry]['type']
+            vlan['state'] = vlans_lookup_table[entry]['state']
+            vlan['name']  = vlans_lookup_table[entry]['name']
+            vlans.append(vlan)
+        deviceinfo['vlans'] = vlans
+
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds + tdiff.days * 24 * 3600) * 10**6) / 1000
+        deviceinfo['query-duration'] = duration
+
+        logger.info('fn=vlanlistAPI/get : duration=%s' % deviceinfo['query-duration'])
+        return deviceinfo
+
+
+    def get_vlans(self, devicename, m, ro_community):
+        ''' return a VLAN dict indexed by vlan-nr '''
+
+        logger.debug('fn=vlanlistAPI/get_vlans : get vlan list')
+        vlans = {}
+        for entry in m.vtpVlanName:
+            vlan = {}
+            logger.debug('fn=vlanlistAPI/get_vlans : get vlan info for entry %s/%s' % entry)
+            # vlan['nr']    = entry[1]
+            vlan['type']  = str(m.vtpVlanType[entry])
+            vlan['state'] = str(m.vtpVlanState[entry])
+            vlan['name']  = m.vtpVlanName[entry]
+            vlans[entry[1]] = vlan
+
+        return vlans
+
+
+
+# -----------------------------------------------------------------------------------
+# PUT on a vlan : assign the port to a VLAN
+# /aj/api/v1/interfaces/vlan/$fqdn/$ifindex
+# -----------------------------------------------------------------------------------
+class PortToVlanAPI(restful.Resource):
+    __doc__ = '''{
+        "name": "PortToVlanAPI", 
+        "description": "PUT on a vlan : assign the port to a VLAN", 
+        "auth": true,
+        "auth-type": "BasicAuth",
+        "params": ["vlan=NNN"],
+        "returns": "status"
+    }'''
+    decorators = [auth.login_required]
+
+    # check argument
+    def __init__(self):
+        self.reqparse = reqparse.RequestParser()
+        self.reqparse.add_argument('vlan', type = str, required = True, help = 'No vlan number provided')
+        super(PortToVlanAPI, self).__init__()
+
+    def put(self, devicename, ifindex):
+
+        args = self.reqparse.parse_args()
+        vlan = args['vlan']
+
+        logger.info('fn=PortToVlanAPI/put : device=%s, ifindex=%s, vlan=%s' % (devicename, ifindex, vlan))
+
+        tstart = datetime.now()
+      
+        rw_community = credmgr.get_credentials(devicename)['rw_community']
+        if not check.check_snmp(logger, M, devicename, rw_community, 'RW'):
+            return {'error': 'SNMP test failed'}, 404
+
+        logger.debug('fn=PortToVlanAPI/get : creating the snimpy manager')
+        m = M(host = devicename, community = rw_community, version = 2, timeout=2, retries=2, none=True)
+
+        # assign the vlan to the port
+        m.vmVlan[ifindex] = vlan
+
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds + tdiff.days * 24 * 3600) * 10**6) / 1000
+
+        return {'info': 'VLAN %s assigned to interface-idx %s successfully' % (vlan, ifindex), 'duration': duration}
+
+
+
+
+# -----------------------------------------------------------------------------------
+# PUT on an interface : configure the interface
+# /aj/api/v1/interface/config/$fqdn/$ifindex
+# -----------------------------------------------------------------------------------
+class InterfaceConfigAPI(restful.Resource):
+    __doc__ = '''{
+        "name": "InterfaceConfigAPI", 
+        "description": "PUT on an interface : configure the interface", 
+        "auth": true,
+        "auth-type": "BasicAuth",
+        "params": ["ifAlias=TXT", "ifAdminStatus={1(up)|2(down)}"],
+        "returns": "status"
+    }'''
+    """ PUT on an interface : configure the interface """
+    decorators = [auth.login_required]
+
+    # check argument
+    def __init__(self):
+        self.reqparse = reqparse.RequestParser()
+        self.reqparse.add_argument('ifAdminStatus', type = int, required = False, help = 'No ifAdminStatus value')
+        self.reqparse.add_argument('ifAlias',       type = str, required = False, help = 'No ifAlias value')
+        super(InterfaceConfigAPI, self).__init__()
+
+    def put(self, devicename, ifindex):
+
+        args = self.reqparse.parse_args()
+        ifAdminStatus = args['ifAdminStatus']
+        ifAlias       = args['ifAlias']
+
+        logger.info('fn=InterfaceConfigAPI/put : device=%s, ifindex=%s, ifAdminStatus=%s, ifAlias=%s' % (devicename, ifindex, ifAdminStatus, ifAlias))
+
+        tstart = datetime.now()
+      
+        rw_community = credmgr.get_credentials(devicename)['rw_community']
+        if not check.check_snmp(logger, M, devicename, rw_community, 'RW'):
+            return {'error': 'SNMP test failed'}, 404
+
+        logger.debug('fn=InterfaceConfigAPI/put : creating the snimpy manager')
+        m = M(host = devicename, community = rw_community, version = 2, timeout=2, retries=2, none=True)
+
+        try:
+            # assign the values to the port
+            if ifAdminStatus is not None:
+                logger.debug('fn=InterfaceConfigAPI/put : set ifAdminStatus')
+                m.ifAdminStatus[ifindex] = ifAdminStatus
+            if ifAlias is not None:
+                logger.debug('fn=InterfaceConfigAPI/put : set ifAlias')
+                m.ifAlias[ifindex]       = ifAlias
+        except Exception, e:
+            logger.error("fn=InterfaceConfigAPI/put : configuration failed : %s" % e)
+            return {'error': 'fn=InterfaceConfigAPI/put : copy configuration : %s' % e}, 404
+
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds + tdiff.days * 24 * 3600) * 10**6) / 1000
+
+        logger.debug('fn=InterfaceConfigAPI/put : done')
+        return {'info': 'interface configured successfully', 'duration': duration}
+
+
+
+# -----------------------------------------------------------------------------------
+# instanciate the Flask application and the REST api
+# -----------------------------------------------------------------------------------
+app = Flask(__name__)
+
+
+
+# -----------------------------------------------------------------------------------
+# configuration
+# -----------------------------------------------------------------------------------
+
+try:
+    envconfig = ConfigParser.ConfigParser()
+    envfile = os.path.join(app.root_path, 'environment.conf')
+    envconfig.read(envfile)
+    environment = envconfig.get('main', 'environment')
+except Exception, e:
+    print "FATAL, cannot read environment from %s: %s" % (envfile, e)
+    sys.exit(1)
+
+if environment == 'PROD':
+    app.config.from_object('config.ProductionConfig')
+elif environment == 'INT':
+    app.config.from_object('config.IntegrationConfig')
+elif environment == 'DEV':
+    app.config.from_object('config.DevelopmentConfig')
+else:
+    print "FATAL ERROR: environment must be set in environment.conf"
+    sys.exit(1)
+
+
+
+# -----------------------------------------------------------------------------------
+# REST API
+# -----------------------------------------------------------------------------------
+api = restful.Api(app)
+
+
+
+# -----------------------------------------------------------------------------------
+# logging
+# -----------------------------------------------------------------------------------
+
+import logging
+log_file = app.config['LOGFILE']
+global logger
+logger = logging.getLogger('AJ')
+hdlr = logging.FileHandler(log_file)
+# we have the PID in each log entry to differentiate parallel processes writing to the log
+formatter = logging.Formatter('%(asctime)s - %(process)d - %(levelname)s %(message)s')
+hdlr.setFormatter(formatter)
+logger.addHandler(hdlr)
+# avoid propagation to console
+logger.propagate = False
+if app.config['DEBUG']:
+    logger.setLevel(logging.DEBUG)
+else:
+    logger.setLevel(logging.INFO)
+
+logger.info('environment : <%s>' % app.config['ENVI'])
+#logger.info('debug : <%s>' % app.config['DEBUG'])
+
+# -----------------------------------------------------------------------------------
+# add all URLs and their corresponding classes
+# -----------------------------------------------------------------------------------
+doc = DocCollection()
+
+api.add_resource(DeviceAPI,                 '/aj/api/v1/device/<string:devicename>')
+doc.add(loads(DeviceAPI.__doc__),           '/aj/api/v1/device/<string:devicename>',                                DeviceAPI.__dict__['methods'])
+
+api.add_resource(DeviceSaveAPI,             '/aj/api/v1/devicesave/<string:devicename>')
+doc.add(loads(DeviceSaveAPI.__doc__),       '/aj/api/v1/devicesave/<string:devicename>',                            DeviceSaveAPI.__dict__['methods'])
+
+api.add_resource(InterfaceAPI,              '/aj/api/v1/interfaces/<string:devicename>')
+doc.add(loads(InterfaceAPI.__doc__),        '/aj/api/v1/interfaces/<string:devicename>',                            InterfaceAPI.__dict__['methods'])
+
+api.add_resource(InterfaceCounterAPI,       '/aj/api/v1/interface/counter/<string:devicename>/<string:ifindex>')
+doc.add(loads(InterfaceCounterAPI.__doc__), '/aj/api/v1/interface/counter/<string:devicename>/<string:ifindex>',    InterfaceCounterAPI.__dict__['methods'])
+
+api.add_resource(MacAPI,                    '/aj/api/v1/macs/<string:devicename>')
+doc.add(loads(MacAPI.__doc__),              '/aj/api/v1/macs/<string:devicename>',                                  MacAPI.__dict__['methods'])
+
+api.add_resource(vlanlistAPI,               '/aj/api/v1/vlans/<string:devicename>')
+doc.add(loads(vlanlistAPI.__doc__),         '/aj/api/v1/vlans/<string:devicename>',                                 vlanlistAPI.__dict__['methods'])
+
+api.add_resource(PortToVlanAPI,             '/aj/api/v1/vlan/<string:devicename>/<string:ifindex>')
+doc.add(loads(PortToVlanAPI.__doc__),       '/aj/api/v1/vlan/<string:devicename>/<string:ifindex>',                 PortToVlanAPI.__dict__['methods'])
+
+api.add_resource(InterfaceConfigAPI,        '/aj/api/v1/interface/config/<string:devicename>/<string:ifindex>')
+doc.add(loads(InterfaceConfigAPI.__doc__),  '/aj/api/v1/interface/config/<string:devicename>/<string:ifindex>',     InterfaceConfigAPI.__dict__['methods'])
+
+
+# -----------------------------------------------------------------------------------
+# auto-doc for API
+# -----------------------------------------------------------------------------------
+doc.add(loads('{"name": "DocAPI", "description": "GET / : API documentation", "auth": false, "auth-type": "", "params": [], "returns": "API documentation"}'), '/', ['GET'])
+@app.route('/')
+def index():
+    return jsonify(doc.apidoc)
+
+@app.route('/xdoc/')
+def xdoc(name=None):
+    return render_template('xdoc.html', apidoc=doc.apidoc)
+
+# -----------------------------------------------------------------------------------
+
+# to get user, passwords and SNMP communites for network devices
+credmgr = credentials.Credentials()
+
+# to do some checks (SNMP, logins, etc)
+check = access_checks.AccessChecks()
+
+# some utility functions
+util = utils.Utilities()
+
+
+
+# -----------------------------------------------------------------------------------
+# authentication when needed
+# -----------------------------------------------------------------------------------
+
+@auth.get_password
+def get_password(username):
+    if username == app.config['BASIC_AUTH_USER']:
+        return app.config['BASIC_AUTH_PASSWORD']
+    return None
+ 
+@auth.error_handler
+def unauthorized():
+    return make_response(jsonify( { 'message': 'Unauthorized access' } ), 401)
+    # returning 403 instead of 401 would prevent browsers from displaying the default auth dialog
+
+
+# -----------------------------------------------------------------------------------
+# browser will ask for a favicon. Avoid 404 by defining one
+# -----------------------------------------------------------------------------------
+
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory(os.path.join(app.root_path, 'static'),
+                               'favicon.ico', mimetype='image/vnd.microsoft.icon')
+
+
+
+# -----------------------------------------------------------------------------------
+# when running interactively
+# -----------------------------------------------------------------------------------
+
+# to profile the script:
+if False:
+    from werkzeug.contrib.profiler import ProfilerMiddleware
+    app.config['PROFILE'] = True
+    app.wsgi_app = ProfilerMiddleware(app.wsgi_app, restrictions = [30])
+    app.run(host='0.0.0.0', debug = True)
+
+# normal run
+if True:
+    if __name__ == '__main__':
+        logger.info('AJ start')
+        app.run(host='0.0.0.0', debug=True)
+        logger.info('AJ end')
+

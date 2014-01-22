@@ -1,0 +1,24 @@
+#
+# aj - agent-jones - Agent-Jones web service
+# create a user aj belonging to group aj
+#
+
+<VirtualHost *:80>
+    ServerAdmin you@domain.com
+    ServerName aj.domain.com
+    
+    WSGIDaemonProcess aj user=aj group=aj threads=10
+    WSGIScriptAlias / /var/www/aj/aj.wsgi
+    # BasicAuth is done in Flask app
+    WSGIPassAuthorization On
+
+    ErrorLog /var/log/apache2/aj_error_log
+    CustomLog /var/log/apache2/aj_access_log combined
+
+    <Directory "/var/www/aj/">
+        WSGIProcessGroup aj
+        WSGIApplicationGroup %{GLOBAL}
+        Order deny,allow
+        Allow from all
+    </Directory>
+</VirtualHost>

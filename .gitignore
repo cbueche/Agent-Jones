@@ -1,0 +1,7 @@
+AJ/bin
+AJ/include
+AJ/lib
+AJ/share
+*.pyc
+.Python
+WARNING_github_public.txt
