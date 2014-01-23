@@ -51,6 +51,7 @@ import error_handling
 # Snimpy SNMP lib and MIB loading
 from snimpy.manager import Manager as M
 from snimpy.manager import load
+from snimpy import snmp
 
 mib_path = script_path + '/mibs/'
 
@@ -685,6 +686,80 @@ class InterfaceConfigAPI(restful.Resource):
 
 
 
+
+
+# -----------------------------------------------------------------------------------
+# SNMP get or walk on a OID
+# this goes a bit beside the idea of this web-service, but it brings flexibility
+# FIXME: walk provide too much info if eg done on a single get instance like 1.3.6.1.2.1.1.3.0
+# -----------------------------------------------------------------------------------
+class OIDpumpAPI(restful.Resource):
+    __doc__ = '''{
+        "name": "OIDpumpAPI", 
+        "description": "SNMP get or walk on a OID. This is not completely tested, and walk tend to give back too much data. get can be used but usually needs a .0 at the end of the OID, so the URI to get sysUptime would be `/aj/api/v1/oidpump/devicename/get/1.3.6.1.2.1.1.3.0`, while the URI to walk ifName would be `/aj/api/v1/oidpump/devicename/walk/1.3.6.1.2.1.31.1.1.1.1`", 
+        "auth": true,
+        "auth-type": "BasicAuth",
+        "params": [],
+        "returns": "A complete data structure containing the results of the get/walk."
+    }'''
+    decorators = [auth.login_required]
+
+    def get(self, devicename, pdu, oid):
+
+        logger.debug('fn=OIDpumpAPI/get : %s : pdu=%s, oid=%s' % (devicename, pdu, oid))
+
+        tstart = datetime.now()
+
+        ro_community = credmgr.get_credentials(devicename)['ro_community']
+        if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
+            return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
+
+        deviceinfo = autovivification.AutoVivification()
+        deviceinfo['name']      = devicename
+
+        logger.debug('fn=OIDpumpAPI/get : %s : creating the SNMP session' % devicename)
+        # m = M(host = devicename, community = ro_community, version = 2, timeout=2, retries=2, none=True)
+        session = snmp.Session(devicename, community = ro_community, version=2)
+
+        if pdu == 'get':
+            try:
+                data = session.get(str(oid))
+            except Exception, e:
+                logger.error("fn=OIDpumpAPI/get : %s : oid get failed: %s" % (devicename, e))
+                return errst.status('ERROR_SNMP_OP', 'oid get failed: %s' % e), 200
+
+        elif pdu == 'walk':
+            try:
+                data = session.walk(str(oid))
+            except Exception, e:
+                logger.error("fn=OIDpumpAPI/get : %s : oid walk failed: %s" % (devicename, e))
+                return errst.status('ERROR_SNMP_OP', 'oid walk failed: %s' % e), 200
+
+        else:
+            return errst.status('ERROR_SNMP_PDU', 'unknown PDU value : %s' % pdu), 200
+
+        # try to unpack the Python tuples. Not sure it will work with all sorts of get/walk results
+        entries = {}
+        for entry in data:
+            oid = '.'.join(map(str,entry[0]))
+            if type(entry[1]) == tuple:
+                value = '.'.join(map(str,entry[1]))
+            else:
+                value = str(entry[1])
+            entries[oid] = value
+
+        deviceinfo['data'] = entries
+
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds + tdiff.days * 24 * 3600) * 10**6) / 1000
+        deviceinfo['query-duration'] = duration
+
+        logger.info('fn=OIDpumpAPI/get : %s : duration=%s' % (devicename, deviceinfo['query-duration']))
+        return deviceinfo
+
+
+
 # -----------------------------------------------------------------------------------
 # instanciate the Flask application and the REST api
 # -----------------------------------------------------------------------------------
@@ -775,6 +850,9 @@ doc.add(loads(PortToVlanAPI.__doc__),       '/aj/api/v1/vlan/<string:devicename>
 
 api.add_resource(InterfaceConfigAPI,        '/aj/api/v1/interface/config/<string:devicename>/<string:ifindex>')
 doc.add(loads(InterfaceConfigAPI.__doc__),  '/aj/api/v1/interface/config/<string:devicename>/<string:ifindex>',     InterfaceConfigAPI.__dict__['methods'])
+
+api.add_resource(OIDpumpAPI,                '/aj/api/v1/oidpump/<string:devicename>/<string:pdu>/<string:oid>')
+doc.add(loads(OIDpumpAPI.__doc__),          '/aj/api/v1/oidpump/<string:devicename>/<string:pdu>/<string:oid>',     OIDpumpAPI.__dict__['methods'])
 
 
 # -----------------------------------------------------------------------------------

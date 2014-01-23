@@ -20,6 +20,8 @@ class Errors():
 
         # 'OK':               {'status_nr': 0,   'status_code': 'OK',               'status_text': 'success'},
         'ERROR_SNMP':       {'status_nr': 10,  'status_code': 'ERROR_SNMP',       'status_text': 'SNMP timeout or wrong communities'},
+        'ERROR_SNMP_PDU':   {'status_nr': 11,  'status_code': 'ERROR_SNMP_PDU',   'status_text': 'SNMP PDU is unknown, must be "get" or "walk"'},
+        'ERROR_SNMP_OP':    {'status_nr': 12,  'status_code': 'ERROR_SNMP_OP',    'status_text': 'SNMP operation failed'},
         'ERROR_MIB_ENTITY': {'status_nr': 20,  'status_code': 'ERROR_MIB_ENTITY', 'status_text': 'Issue with Entity MIB'},
         'ERROR_OP':         {'status_nr': 30,  'status_code': 'ERROR_OP',         'status_text': 'Operation failed'},
 
