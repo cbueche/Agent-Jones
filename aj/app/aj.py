@@ -46,6 +46,7 @@ import credentials
 
 import utils
 import access_checks
+import error_handling
 
 # Snimpy SNMP lib and MIB loading
 from snimpy.manager import Manager as M
@@ -126,7 +127,7 @@ class DeviceAPI(restful.Resource):
         logger.debug('fn=DeviceAPI/get : %s : creating the snimpy manager' % devicename)
         ro_community = credmgr.get_credentials(devicename)['ro_community']
         if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
-            return {'error': 'SNMP test failed'}, 404
+            return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         m = M(host = devicename, community = ro_community, version = 2, timeout=2, retries=2, none=True)
         deviceinfo['sysName'] = m.sysName
@@ -180,7 +181,9 @@ class DeviceAPI(restful.Resource):
                 })
         if parent is None:
             log.warn("fn=DeviceAPI/get_serial : %s : could not get an entity parent in get_serial" % devicename)
-        return hardware_info
+            return errst.status('ERROR_MIB_ENTITY', 'could not get an entity parent in get_serial'), 200
+        else:
+            return hardware_info
 
 
 
@@ -209,7 +212,7 @@ class DeviceSaveAPI(restful.Resource):
         rw_community = credmgr.get_credentials(devicename)['rw_community']
       
         if not check.check_snmp(logger, M, devicename, rw_community, 'RW'):
-            return {'error': 'SNMP test failed'}, 404
+            return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         logger.debug('fn=DeviceSaveAPI/get : %s : creating the snimpy manager' % devicename)
         m = M(host = devicename, community = rw_community, version = 2, timeout=2, retries=2, none=True)
@@ -247,7 +250,7 @@ class DeviceSaveAPI(restful.Resource):
                 # failure
                 cause = m.ConfigCopyFailCause
                 logger.error("fn=DeviceSaveAPI/put : %s : operation %d : copy failed, cause = %s" % (devicename, cause, opidx))
-                return {'error': 'config save for %s failed' % devicename, 'message': '%s' % cause, 'operation-nr': opidx}
+                return errst.status('ERROR_OP', 'config save for %s failed, cause : %s, operation-nr : %s' % (devicename, cause, opidx)), 200
             else:
                 # success
                 logger.info("fn=DeviceSaveAPI/put : %s : operation %d : copy successful" % (devicename, opidx))
@@ -258,7 +261,7 @@ class DeviceSaveAPI(restful.Resource):
 
         except Exception, e:
             logger.error("fn=DeviceSaveAPI/put : %s : copy failed : %s" % (devicename, e))
-            return {'error': 'fn=DeviceSaveAPI/put : copy failed : %s' % e}, 404
+            return errst.status('ERROR_OP', 'config save for %s failed, cause : %s' % (devicename, e)), 200
 
         tend = datetime.now()
         tdiff = tend - tstart
@@ -295,7 +298,7 @@ class InterfaceAPI(restful.Resource):
 
         ro_community = credmgr.get_credentials(devicename)['ro_community']
         if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
-            return {'error': 'SNMP test failed'}, 404
+            return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         deviceinfo = autovivification.AutoVivification()
         deviceinfo['name']      = devicename
@@ -381,7 +384,7 @@ class InterfaceCounterAPI(restful.Resource):
 
         ro_community = credmgr.get_credentials(devicename)['ro_community']
         if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
-            return {'error': 'SNMP test failed'}, 404
+            return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         deviceinfo = autovivification.AutoVivification()
         deviceinfo['name']      = devicename
@@ -431,7 +434,7 @@ class MacAPI(restful.Resource):
 
         ro_community = credmgr.get_credentials(devicename)['ro_community']
         if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
-            return {'error': 'SNMP test failed'}, 404
+            return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         deviceinfo = autovivification.AutoVivification()
         deviceinfo['name']      = devicename
@@ -521,7 +524,7 @@ class vlanlistAPI(restful.Resource):
 
         ro_community = credmgr.get_credentials(devicename)['ro_community']
         if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
-            return {'error': 'SNMP test failed'}, 404
+            return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         deviceinfo = autovivification.AutoVivification()
         deviceinfo['name'] = devicename
@@ -602,7 +605,7 @@ class PortToVlanAPI(restful.Resource):
       
         rw_community = credmgr.get_credentials(devicename)['rw_community']
         if not check.check_snmp(logger, M, devicename, rw_community, 'RW'):
-            return {'error': 'SNMP test failed'}, 404
+            return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         logger.debug('fn=PortToVlanAPI/get : %s : creating the snimpy manager' % devicename)
         m = M(host = devicename, community = rw_community, version = 2, timeout=2, retries=2, none=True)
@@ -656,7 +659,7 @@ class InterfaceConfigAPI(restful.Resource):
       
         rw_community = credmgr.get_credentials(devicename)['rw_community']
         if not check.check_snmp(logger, M, devicename, rw_community, 'RW'):
-            return {'error': 'SNMP test failed'}, 404
+            return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         logger.debug('fn=InterfaceConfigAPI/put : %s : creating the snimpy manager' % devicename)
         m = M(host = devicename, community = rw_community, version = 2, timeout=2, retries=2, none=True)
@@ -670,8 +673,8 @@ class InterfaceConfigAPI(restful.Resource):
                 logger.debug('fn=InterfaceConfigAPI/put : %s : set ifAlias' % devicename)
                 m.ifAlias[ifindex]       = ifAlias
         except Exception, e:
-            logger.error("fn=InterfaceConfigAPI/put : %s : configuration failed : %s" % (devicename, e))
-            return {'error': 'fn=InterfaceConfigAPI/put : copy configuration : %s' % e}, 404
+            logger.error("fn=InterfaceConfigAPI/put : %s : interface configuration failed : %s" % (devicename, e))
+            return errst.status('ERROR_OP', 'interface configuration failed : %s' % e), 200
 
         tend = datetime.now()
         tdiff = tend - tstart
@@ -797,6 +800,8 @@ check = access_checks.AccessChecks()
 # some utility functions
 util = utils.Utilities()
 
+# standardized error codes
+errst = error_handling.Errors()
 
 
 # -----------------------------------------------------------------------------------
