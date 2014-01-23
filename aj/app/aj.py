@@ -36,7 +36,14 @@ import ConfigParser
 import netaddr
 
 import autovivification
+
+# find where we are to create the correct path to the MIBs below and to know where is etc/
+full_path = os.path.realpath(__file__)
+script_path = os.path.split(full_path)[0]
+sys.path.insert(0, script_path + '/etc')
+
 import credentials
+
 import utils
 import access_checks
 
@@ -44,9 +51,6 @@ import access_checks
 from snimpy.manager import Manager as M
 from snimpy.manager import load
 
-# find where we are to create the correct path to the MIBs below
-full_path = os.path.realpath(__file__)
-script_path = os.path.split(full_path)[0]
 mib_path = script_path + '/mibs/'
 
 # base MIB
@@ -119,21 +123,21 @@ class DeviceAPI(restful.Resource):
         deviceinfo = autovivification.AutoVivification()
         deviceinfo['name']      = devicename
 
-        logger.debug('fn=DeviceAPI/get : creating the snimpy manager')
+        logger.debug('fn=DeviceAPI/get : %s : creating the snimpy manager' % devicename)
         ro_community = credmgr.get_credentials(devicename)['ro_community']
         if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
             return {'error': 'SNMP test failed'}, 404
 
         m = M(host = devicename, community = ro_community, version = 2, timeout=2, retries=2, none=True)
         deviceinfo['sysName'] = m.sysName
-        logger.debug('fn=DeviceAPI/get : request device info')
+        logger.debug('fn=DeviceAPI/get : %s : request device info' % devicename)
         deviceinfo['sysDescr']    = m.sysDescr
         deviceinfo['sysContact']  = m.sysContact
         deviceinfo['sysLocation'] = m.sysLocation
         deviceinfo['sysObjectID'] = str(m.sysObjectID)
         deviceinfo['sysUpTime']   = int(m.sysUpTime) / 100
 
-        logger.debug('fn=DeviceAPI/get : get serial numbers')
+        logger.debug('fn=DeviceAPI/get : %s : get serial numbers' % devicename)
         deviceinfo['entities'] = self.get_serial(m)
 
         tend = datetime.now()
@@ -141,7 +145,7 @@ class DeviceAPI(restful.Resource):
         duration = (tdiff.microseconds + (tdiff.seconds + tdiff.days * 24 * 3600) * 10**6) / 1000
         deviceinfo['query-duration'] = duration
 
-        logger.info('fn=DeviceAPI/get : duration=%s' % deviceinfo['query-duration'])
+        logger.info('fn=DeviceAPI/get : %s : duration=%s' % (devicename, deviceinfo['query-duration']))
         return deviceinfo
 
 
@@ -175,7 +179,7 @@ class DeviceAPI(restful.Resource):
                     'physicalName':         m.entPhysicalName[parent]
                 })
         if parent is None:
-            log.warn("could not get an entity parent in get_serial")
+            log.warn("fn=DeviceAPI/get_serial : %s : could not get an entity parent in get_serial" % devicename)
         return hardware_info
 
 
@@ -207,23 +211,23 @@ class DeviceSaveAPI(restful.Resource):
         if not check.check_snmp(logger, M, devicename, rw_community, 'RW'):
             return {'error': 'SNMP test failed'}, 404
 
-        logger.debug('fn=DeviceSaveAPI/get : creating the snimpy manager')
+        logger.debug('fn=DeviceSaveAPI/get : %s : creating the snimpy manager' % devicename)
         m = M(host = devicename, community = rw_community, version = 2, timeout=2, retries=2, none=True)
 
         # random operation index
         opidx = randint(1, 1000)
-        logger.debug('fn=DeviceSaveAPI/put : operation %d' % opidx)
+        logger.debug('fn=DeviceSaveAPI/put : %s : operation %d' % (devicename, opidx))
 
         # some devices will for sure fail, so catch them
         try:
             # set the source to be the running-config
-            logger.debug('fn=DeviceSaveAPI/put : operation %d : set the source to be the running-config' % opidx)
+            logger.debug('fn=DeviceSaveAPI/put : %s : operation %d : set the source to be the running-config' % (devicename, opidx))
             m.ccCopySourceFileType[opidx] = 4
             # set the dest to be the startup-config
-            logger.debug('fn=DeviceSaveAPI/put : operation %d : set the dest to be the startup-config' % opidx)
+            logger.debug('fn=DeviceSaveAPI/put : %s : operation %d : set the dest to be the startup-config' % (devicename, opidx))
             m.ccCopyDestFileType[opidx] = 3
             # start the transfer
-            logger.debug('fn=DeviceSaveAPI/put : operation %d : start the transfer' % opidx)
+            logger.debug('fn=DeviceSaveAPI/put : %s : operation %d : start the transfer' % (devicename, opidx))
             m.ccCopyEntryRowStatus[opidx] = 1
 
             write_timeout = 10
@@ -233,34 +237,34 @@ class DeviceSaveAPI(restful.Resource):
                 state = m.ccCopyState[opidx]
                 if state == 3 or state == 4:
                     break
-                logger.debug("fn=DeviceSaveAPI/put : operation %d : waiting for config save to finish" % opidx)
+                logger.debug("fn=DeviceSaveAPI/put : %s : operation %d : waiting for config save to finish" % (devicename, opidx))
                 time.sleep(0.5)
 
-            logger.debug("fn=DeviceSaveAPI/put : operation %d : waited=%s seconds" % (opidx, waited))
+            logger.debug("fn=DeviceSaveAPI/put : %s : operation %d : waited=%s seconds" % (devicename, opidx, waited))
 
             # check
             if m.ccCopyState == 4:
                 # failure
                 cause = m.ConfigCopyFailCause
-                logger.error("fn=DeviceSaveAPI/put : operation %d : copy failed, cause = %s" % (cause, opidx))
+                logger.error("fn=DeviceSaveAPI/put : %s : operation %d : copy failed, cause = %s" % (devicename, cause, opidx))
                 return {'error': 'config save for %s failed' % devicename, 'message': '%s' % cause, 'operation-nr': opidx}
             else:
                 # success
-                logger.info("fn=DeviceSaveAPI/put : operation %d : copy successful" % opidx)
+                logger.info("fn=DeviceSaveAPI/put : %s : operation %d : copy successful" % (devicename, opidx))
 
             # delete op
-            logger.debug("fn=DeviceSaveAPI/put : operation %d : clear operation" % opidx)
+            logger.debug("fn=DeviceSaveAPI/put : %s : operation %d : clear operation" % (devicename, opidx))
             m.ccCopyEntryRowStatus[opidx] = 6
 
         except Exception, e:
-            logger.error("fn=DeviceSaveAPI/put : copy failed : %s" % e)
+            logger.error("fn=DeviceSaveAPI/put : %s : copy failed : %s" % (devicename, e))
             return {'error': 'fn=DeviceSaveAPI/put : copy failed : %s' % e}, 404
 
         tend = datetime.now()
         tdiff = tend - tstart
         duration = (tdiff.microseconds + (tdiff.seconds + tdiff.days * 24 * 3600) * 10**6) / 1000
 
-        logger.info('fn=DeviceSaveAPI/put : duration=%s' % duration)
+        logger.info('fn=DeviceSaveAPI/put : %s : duration=%s' % (devicename, duration))
         return {'info': 'config save for %s successful' % devicename, 'duration': duration, 'operation-nr': opidx}
 
 
@@ -296,7 +300,7 @@ class InterfaceAPI(restful.Resource):
         deviceinfo = autovivification.AutoVivification()
         deviceinfo['name']      = devicename
 
-        logger.debug('fn=InterfaceAPI/get : creating the snimpy manager')
+        logger.debug('fn=InterfaceAPI/get : %s : creating the snimpy manager' % devicename)
         m = M(host = devicename, community = ro_community, version = 2, timeout=2, retries=2, none=True)
         deviceinfo['sysName'] = m.sysName
 
@@ -309,11 +313,11 @@ class InterfaceAPI(restful.Resource):
             vlanAPI = vlanlistAPI()
             vlans = vlanAPI.get_vlans(devicename, m, ro_community)
 
-        logger.debug('fn=DeviceAPI/get : get interface info')
+        logger.debug('fn=DeviceAPI/get : %s : get interface info' % devicename)
         interfaces = []
         for index in m.ifDescr:
             interface = {}
-            logger.debug('fn=DeviceAPI/get : get interface info for index %s' % (index))
+            logger.debug('fn=DeviceAPI/get : %s : get interface info for index %s' % (devicename, index))
             interface['index']                                         = index
             interface['ifAdminStatus'], interface['ifAdminStatusText'] = util.translate_status(str(m.ifAdminStatus[index]))
             interface['ifOperStatus'], interface['ifOperStatusText']   = util.translate_status(str(m.ifOperStatus[index]))
@@ -350,7 +354,7 @@ class InterfaceAPI(restful.Resource):
         duration = (tdiff.microseconds + (tdiff.seconds + tdiff.days * 24 * 3600) * 10**6) / 1000
         deviceinfo['query-duration'] = duration
 
-        logger.info('fn=InterfaceAPI/get : duration=%s' % deviceinfo['query-duration'])
+        logger.info('fn=InterfaceAPI/get : %s : duration=%s' % (devicename, deviceinfo['query-duration']))
         return deviceinfo
 
 
@@ -371,7 +375,7 @@ class InterfaceCounterAPI(restful.Resource):
 
     def get(self, devicename, ifindex):
 
-        logger.debug('fn=InterfaceCounterAPI/get : %s/%s' % (devicename, ifindex))
+        logger.debug('fn=InterfaceCounterAPI/get : %s : index=%s' % (devicename, ifindex))
 
         tstart = datetime.now()
 
@@ -382,12 +386,12 @@ class InterfaceCounterAPI(restful.Resource):
         deviceinfo = autovivification.AutoVivification()
         deviceinfo['name']      = devicename
 
-        logger.debug('fn=InterfaceCounterAPI/get : creating the snimpy manager')
+        logger.debug('fn=InterfaceCounterAPI/get : %s : creating the snimpy manager' % devicename)
         m = M(host = devicename, community = ro_community, version = 2, timeout=2, retries=2, none=True)
         deviceinfo['sysName'] = m.sysName
         deviceinfo['interface'] = str(m.ifDescr[ifindex])
 
-        logger.debug('fn=InterfaceCounterAPI/get : get interface counters')
+        logger.debug('fn=InterfaceCounterAPI/get : %s : get interface counters' % devicename)
         counters = {}
         counters['ifHCInOctets'] = m.ifHCInOctets[ifindex]
         counters['ifHCOutOctets'] = m.ifHCOutOctets[ifindex]
@@ -400,7 +404,7 @@ class InterfaceCounterAPI(restful.Resource):
         duration = (tdiff.microseconds + (tdiff.seconds + tdiff.days * 24 * 3600) * 10**6) / 1000
         deviceinfo['query-duration'] = duration
 
-        logger.info('fn=InterfaceCounterAPI/get : duration=%s' % deviceinfo['query-duration'])
+        logger.info('fn=InterfaceCounterAPI/get : %s : duration=%s' % (devicename, deviceinfo['query-duration']))
         return deviceinfo
 
 
@@ -432,7 +436,7 @@ class MacAPI(restful.Resource):
         deviceinfo = autovivification.AutoVivification()
         deviceinfo['name']      = devicename
 
-        logger.debug('fn=InterfaceAPI/get : creating the snimpy manager')
+        logger.debug('fn=InterfaceAPI/get : %s : creating the snimpy manager' % devicename)
         m = M(host = devicename, community = ro_community, version = 2, timeout=2, retries=2, none=True)
         deviceinfo['sysName'] = m.sysName
 
@@ -451,7 +455,7 @@ class MacAPI(restful.Resource):
         duration = (tdiff.microseconds + (tdiff.seconds + tdiff.days * 24 * 3600) * 10**6) / 1000
         deviceinfo['query-duration'] = duration
 
-        logger.info('fn=MacAPI/get : duration=%s' % duration)
+        logger.info('fn=MacAPI/get : %s : duration=%s' % (devicename, duration))
         deviceinfo['macs'] = macs_organized
         return deviceinfo
 
@@ -471,7 +475,7 @@ class MacAPI(restful.Resource):
 
             # only ethernet VLANs
             if vlan_type == 'ethernet' and vlan_state == 'operational':
-                logger.debug('fn=MacAPI/get_macs_from_device : polling vlan %s (%s)' % (vlan_nr, vlan_name))
+                logger.debug('fn=MacAPI/get_macs_from_device : %s : polling vlan %s (%s)' % (devicename, vlan_nr, vlan_name))
 
                 # VLAN-based community, have a local manager for each VLAN
                 vlan_community = "%s@%s" % (ro_community, vlan_nr)
@@ -522,12 +526,12 @@ class vlanlistAPI(restful.Resource):
         deviceinfo = autovivification.AutoVivification()
         deviceinfo['name'] = devicename
 
-        logger.debug('fn=vlanlistAPI/get : creating the snimpy manager')
+        logger.debug('fn=vlanlistAPI/get : %s : creating the snimpy manager' % devicename)
 
         m = M(host = devicename, community = ro_community, version = 2, timeout=2, retries=2, none=True)
         deviceinfo['sysName'] = m.sysName
 
-        logger.debug('fn=vlanlistAPI/get : get vlan list')
+        logger.debug('fn=vlanlistAPI/get : %s : get vlan list' % devicename)
         vlans_lookup_table = self.get_vlans(devicename, m, ro_community)
 
         vlans = []
@@ -545,19 +549,18 @@ class vlanlistAPI(restful.Resource):
         duration = (tdiff.microseconds + (tdiff.seconds + tdiff.days * 24 * 3600) * 10**6) / 1000
         deviceinfo['query-duration'] = duration
 
-        logger.info('fn=vlanlistAPI/get : duration=%s' % deviceinfo['query-duration'])
+        logger.info('fn=vlanlistAPI/get : %s : duration=%s' % (devicename, deviceinfo['query-duration']))
         return deviceinfo
 
 
     def get_vlans(self, devicename, m, ro_community):
         ''' return a VLAN dict indexed by vlan-nr '''
 
-        logger.debug('fn=vlanlistAPI/get_vlans : get vlan list')
+        logger.debug('fn=vlanlistAPI/get_vlans : %s : get vlan list' % devicename)
         vlans = {}
         for entry in m.vtpVlanName:
             vlan = {}
-            logger.debug('fn=vlanlistAPI/get_vlans : get vlan info for entry %s/%s' % entry)
-            # vlan['nr']    = entry[1]
+            logger.debug('fn=vlanlistAPI/get_vlans : %s : get vlan info for entry %s/%s' % (devicename, entry[0], entry[1]))
             vlan['type']  = str(m.vtpVlanType[entry])
             vlan['state'] = str(m.vtpVlanState[entry])
             vlan['name']  = m.vtpVlanName[entry]
@@ -593,7 +596,7 @@ class PortToVlanAPI(restful.Resource):
         args = self.reqparse.parse_args()
         vlan = args['vlan']
 
-        logger.info('fn=PortToVlanAPI/put : device=%s, ifindex=%s, vlan=%s' % (devicename, ifindex, vlan))
+        logger.info('fn=PortToVlanAPI/put : %s : ifindex=%s, vlan=%s' % (devicename, ifindex, vlan))
 
         tstart = datetime.now()
       
@@ -601,7 +604,7 @@ class PortToVlanAPI(restful.Resource):
         if not check.check_snmp(logger, M, devicename, rw_community, 'RW'):
             return {'error': 'SNMP test failed'}, 404
 
-        logger.debug('fn=PortToVlanAPI/get : creating the snimpy manager')
+        logger.debug('fn=PortToVlanAPI/get : %s : creating the snimpy manager' % devicename)
         m = M(host = devicename, community = rw_community, version = 2, timeout=2, retries=2, none=True)
 
         # assign the vlan to the port
@@ -611,7 +614,9 @@ class PortToVlanAPI(restful.Resource):
         tdiff = tend - tstart
         duration = (tdiff.microseconds + (tdiff.seconds + tdiff.days * 24 * 3600) * 10**6) / 1000
 
-        return {'info': 'VLAN %s assigned to interface-idx %s successfully' % (vlan, ifindex), 'duration': duration}
+        logger.debug('fn=PortToVlanAPI/put : %s : VLAN %s assigned to interface-idx %s successfully' % (devicename, vlan, ifindex))
+
+        return {'info': '%s : VLAN %s assigned to interface-idx %s successfully' % (devicename, vlan, ifindex), 'duration': duration}
 
 
 
@@ -645,7 +650,7 @@ class InterfaceConfigAPI(restful.Resource):
         ifAdminStatus = args['ifAdminStatus']
         ifAlias       = args['ifAlias']
 
-        logger.info('fn=InterfaceConfigAPI/put : device=%s, ifindex=%s, ifAdminStatus=%s, ifAlias=%s' % (devicename, ifindex, ifAdminStatus, ifAlias))
+        logger.info('fn=InterfaceConfigAPI/put : %s : ifindex=%s, ifAdminStatus=%s, ifAlias=%s' % (devicename, ifindex, ifAdminStatus, ifAlias))
 
         tstart = datetime.now()
       
@@ -653,26 +658,26 @@ class InterfaceConfigAPI(restful.Resource):
         if not check.check_snmp(logger, M, devicename, rw_community, 'RW'):
             return {'error': 'SNMP test failed'}, 404
 
-        logger.debug('fn=InterfaceConfigAPI/put : creating the snimpy manager')
+        logger.debug('fn=InterfaceConfigAPI/put : %s : creating the snimpy manager' % devicename)
         m = M(host = devicename, community = rw_community, version = 2, timeout=2, retries=2, none=True)
 
         try:
             # assign the values to the port
             if ifAdminStatus is not None:
-                logger.debug('fn=InterfaceConfigAPI/put : set ifAdminStatus')
+                logger.debug('fn=InterfaceConfigAPI/put : %s : set ifAdminStatus' % devicename)
                 m.ifAdminStatus[ifindex] = ifAdminStatus
             if ifAlias is not None:
-                logger.debug('fn=InterfaceConfigAPI/put : set ifAlias')
+                logger.debug('fn=InterfaceConfigAPI/put : %s : set ifAlias' % devicename)
                 m.ifAlias[ifindex]       = ifAlias
         except Exception, e:
-            logger.error("fn=InterfaceConfigAPI/put : configuration failed : %s" % e)
+            logger.error("fn=InterfaceConfigAPI/put : %s : configuration failed : %s" % (devicename, e))
             return {'error': 'fn=InterfaceConfigAPI/put : copy configuration : %s' % e}, 404
 
         tend = datetime.now()
         tdiff = tend - tstart
         duration = (tdiff.microseconds + (tdiff.seconds + tdiff.days * 24 * 3600) * 10**6) / 1000
 
-        logger.debug('fn=InterfaceConfigAPI/put : done')
+        logger.debug('fn=InterfaceConfigAPI/put : %s : interface configured successfully' % devicename)
         return {'info': 'interface configured successfully', 'duration': duration}
 
 
@@ -690,7 +695,7 @@ app = Flask(__name__)
 
 try:
     envconfig = ConfigParser.ConfigParser()
-    envfile = os.path.join(app.root_path, 'environment.conf')
+    envfile = os.path.join(app.root_path, 'etc/environment.conf')
     envconfig.read(envfile)
     environment = envconfig.get('main', 'environment')
 except Exception, e:
@@ -704,7 +709,7 @@ elif environment == 'INT':
 elif environment == 'DEV':
     app.config.from_object('config.DevelopmentConfig')
 else:
-    print "FATAL ERROR: environment must be set in environment.conf"
+    print "FATAL ERROR: environment must be set in etc/environment.conf"
     sys.exit(1)
 
 
@@ -737,7 +742,7 @@ else:
     logger.setLevel(logging.INFO)
 
 logger.info('environment : <%s>' % app.config['ENVI'])
-#logger.info('debug : <%s>' % app.config['DEBUG'])
+
 
 # -----------------------------------------------------------------------------------
 # add all URLs and their corresponding classes

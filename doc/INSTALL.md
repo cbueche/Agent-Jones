@@ -9,6 +9,7 @@ Installation must be done within a Python virtual environment. The goal is to is
     pip install -r .../deployment/requirements.pip 
     rsync -av .../app ./
     python aj.py
+    # patch snimpy if needed : https://github.com/vincentbernat/snimpy/commit/6857ca3af5ca4858161e7e8e3985bd07ecd7b4a2
 
 Agent-Jones is a WSGI service within Apache, see the files in deployment/ and the [WSGI documentation](https://code.google.com/p/modwsgi/).
 
