@@ -26,9 +26,9 @@ Configuration
 
 Edit these files to your taste. Copy from the templates and adapt to your own setup.
 
-	app/environment.conf
-    app/config.py
-    app/credentials.py
+	app/etc/environment.conf
+    app/etc/config.py
+    app/etc/credentials.py
 
 The configuration happens with these steps:
 
