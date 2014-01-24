@@ -51,7 +51,7 @@ The following IOS commands might be present on modeled devices to allow for long
 Installation
 ------------
 
-See INSTALL.md
+Read the [installation guide](doc/INSTALL.md).
 
 
 Usage
