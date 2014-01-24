@@ -1,7 +1,7 @@
 Agent-Jones
 ===========
 
-Agent-Jones is a web-service used retrieve info from and configure Cisco devices.
+Agent-Jones is a web-service used to configure and retrieve info from Cisco devices.
 Mostly switches, but it could as well be used for routers. Its goal is to serve as a back-end
 for nice GUIs and collectors applications. As such, it does't have has any GUI.
 
