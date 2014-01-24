@@ -140,7 +140,7 @@ class DeviceAPI(restful.Resource):
         deviceinfo['sysUpTime']   = int(m.sysUpTime) / 100
 
         logger.debug('fn=DeviceAPI/get : %s : get serial numbers' % devicename)
-        deviceinfo['entities'] = self.get_serial(m)
+        deviceinfo['entities'] = self.get_serial(m, devicename)
 
         tend = datetime.now()
         tdiff = tend - tstart
@@ -151,7 +151,7 @@ class DeviceAPI(restful.Resource):
         return deviceinfo
 
 
-    def get_serial(self, m):
+    def get_serial(self, m, devicename):
         ''' get the serial numbers using the Entity-MIB
             https://raw.github.com/vincentbernat/snimpy/master/examples/get-serial.py
 
@@ -181,8 +181,8 @@ class DeviceAPI(restful.Resource):
                     'physicalName':         m.entPhysicalName[parent]
                 })
         if parent is None:
-            log.warn("fn=DeviceAPI/get_serial : %s : could not get an entity parent in get_serial" % devicename)
-            return errst.status('ERROR_MIB_ENTITY', 'could not get an entity parent in get_serial'), 200
+            logger.warn("fn=DeviceAPI/get_serial : %s : could not get an entity parent" % devicename)
+            return errst.status('ERROR_MIB_ENTITY', 'could not get an entity parent in get_serial')
         else:
             return hardware_info
 
@@ -198,15 +198,24 @@ class DeviceSaveAPI(restful.Resource):
         "description": "save the running-config to startup-config", 
         "auth": true,
         "auth-type": "BasicAuth",
-        "params": [],
+        "params": ["uuid=UUID (optional, used to identify the write request in logs)"],
         "returns": "status info"
     }
     '''
     decorators = [auth.login_required]
 
+    # check argument
+    def __init__(self):
+        self.reqparse = reqparse.RequestParser()
+        self.reqparse.add_argument('uuid', type = str, required = False, help = 'No uuid provided')
+        super(DeviceSaveAPI, self).__init__()
+
     def put(self, devicename):
 
-        logger.info('fn=DeviceSaveAPI/put : %s' % devicename)
+        args = self.reqparse.parse_args()
+        uuid = args['uuid']
+
+        logger.info('fn=DeviceSaveAPI/put : %s, uuid=%s' % (devicename, uuid))
 
         tstart = datetime.now()
 
@@ -584,7 +593,7 @@ class PortToVlanAPI(restful.Resource):
         "description": "PUT on a vlan : assign the port to a VLAN", 
         "auth": true,
         "auth-type": "BasicAuth",
-        "params": ["vlan=NNN"],
+        "params": ["vlan=NNN", "uuid=UUID (optional, used to identify the write request in logs)"],
         "returns": "status"
     }'''
     decorators = [auth.login_required]
@@ -593,14 +602,16 @@ class PortToVlanAPI(restful.Resource):
     def __init__(self):
         self.reqparse = reqparse.RequestParser()
         self.reqparse.add_argument('vlan', type = str, required = True, help = 'No vlan number provided')
+        self.reqparse.add_argument('uuid', type = str, required = False, help = 'No uuid provided')
         super(PortToVlanAPI, self).__init__()
 
     def put(self, devicename, ifindex):
 
         args = self.reqparse.parse_args()
         vlan = args['vlan']
+        uuid = args['uuid']
 
-        logger.info('fn=PortToVlanAPI/put : %s : ifindex=%s, vlan=%s' % (devicename, ifindex, vlan))
+        logger.info('fn=PortToVlanAPI/put : %s : ifindex=%s, vlan=%s, uuid=%s' % (devicename, ifindex, vlan, uuid))
 
         tstart = datetime.now()
       
@@ -635,7 +646,7 @@ class InterfaceConfigAPI(restful.Resource):
         "description": "PUT on an interface : configure the interface", 
         "auth": true,
         "auth-type": "BasicAuth",
-        "params": ["ifAlias=TXT", "ifAdminStatus={1(up)|2(down)}"],
+        "params": ["ifAlias=TXT", "ifAdminStatus={1(up)|2(down)}", "uuid=UUID (optional, used to identify the write request in logs)"],
         "returns": "status"
     }'''
     """ PUT on an interface : configure the interface """
@@ -646,6 +657,7 @@ class InterfaceConfigAPI(restful.Resource):
         self.reqparse = reqparse.RequestParser()
         self.reqparse.add_argument('ifAdminStatus', type = int, required = False, help = 'No ifAdminStatus value')
         self.reqparse.add_argument('ifAlias',       type = str, required = False, help = 'No ifAlias value')
+        self.reqparse.add_argument('uuid',          type = str, required = False, help = 'No uuid provided')
         super(InterfaceConfigAPI, self).__init__()
 
     def put(self, devicename, ifindex):
@@ -653,8 +665,9 @@ class InterfaceConfigAPI(restful.Resource):
         args = self.reqparse.parse_args()
         ifAdminStatus = args['ifAdminStatus']
         ifAlias       = args['ifAlias']
+        uuid          = args['uuid']
 
-        logger.info('fn=InterfaceConfigAPI/put : %s : ifindex=%s, ifAdminStatus=%s, ifAlias=%s' % (devicename, ifindex, ifAdminStatus, ifAlias))
+        logger.info('fn=InterfaceConfigAPI/put : %s : ifindex=%s, ifAdminStatus=%s, ifAlias=%s, uuid=%s' % (devicename, ifindex, ifAdminStatus, ifAlias, uuid))
 
         tstart = datetime.now()
       
@@ -683,8 +696,6 @@ class InterfaceConfigAPI(restful.Resource):
 
         logger.debug('fn=InterfaceConfigAPI/put : %s : interface configured successfully' % devicename)
         return {'info': 'interface configured successfully', 'duration': duration}
-
-
 
 
 
