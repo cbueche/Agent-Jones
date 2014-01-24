@@ -207,7 +207,7 @@ class DeviceSaveAPI(restful.Resource):
     # check argument
     def __init__(self):
         self.reqparse = reqparse.RequestParser()
-        self.reqparse.add_argument('uuid', type = str, required = False, help = 'No uuid provided')
+        self.reqparse.add_argument('uuid', type = str, required = mandate_uuid, help = 'No uuid provided')
         super(DeviceSaveAPI, self).__init__()
 
     def put(self, devicename):
@@ -602,7 +602,7 @@ class PortToVlanAPI(restful.Resource):
     def __init__(self):
         self.reqparse = reqparse.RequestParser()
         self.reqparse.add_argument('vlan', type = str, required = True, help = 'No vlan number provided')
-        self.reqparse.add_argument('uuid', type = str, required = False, help = 'No uuid provided')
+        self.reqparse.add_argument('uuid', type = str, required = mandate_uuid, help = 'No uuid provided')
         super(PortToVlanAPI, self).__init__()
 
     def put(self, devicename, ifindex):
@@ -657,7 +657,7 @@ class InterfaceConfigAPI(restful.Resource):
         self.reqparse = reqparse.RequestParser()
         self.reqparse.add_argument('ifAdminStatus', type = int, required = False, help = 'No ifAdminStatus value')
         self.reqparse.add_argument('ifAlias',       type = str, required = False, help = 'No ifAlias value')
-        self.reqparse.add_argument('uuid',          type = str, required = False, help = 'No uuid provided')
+        self.reqparse.add_argument('uuid',          type = str, required = mandate_uuid, help = 'No uuid provided')
         super(InterfaceConfigAPI, self).__init__()
 
     def put(self, devicename, ifindex):
@@ -830,7 +830,9 @@ if app.config['DEBUG']:
 else:
     logger.setLevel(logging.INFO)
 
-logger.info('environment : <%s>' % app.config['ENVI'])
+logger.info('environment  : <%s>' % app.config['ENVI'])
+mandate_uuid = app.config['MANDATE_UUID']
+logger.info('mandate_uuid : <%s>' % mandate_uuid)
 
 
 # -----------------------------------------------------------------------------------

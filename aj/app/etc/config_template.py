@@ -17,6 +17,9 @@ class Config(object):
 
     LOGFILE = '/var/log/aj/aj.log'
 
+    # if True, PUT and POST requests will need to contain a uuid parameter
+    MANDATE_UUID = True
+
 
 # values for prod
 class ProductionConfig(Config):
@@ -25,6 +28,7 @@ class ProductionConfig(Config):
 
 # values for int
 class IntegrationConfig(Config):
+    DEBUG = True
     ENVI = 'integration'
 
 
