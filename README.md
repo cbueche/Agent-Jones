@@ -25,12 +25,15 @@ Features
 - Configure an interface : adminStatus and ifAlias (called description in Cisco language).
 - List the connected MAC addresses : MAC(ethernet) to port mappings from a device.
 - Get the interface counters of one interface.
+- SNMP get or walk on a OID
 
 
 Screenshots
 -----------
 
-Everyone wants [screenshots](http://FIXME).
+Everyone wants screenshots. 
+	- ![device info](doc/aj_device.png?raw=true).
+	- ![interface list](doc/aj_interfaces.png?raw=true).
 
 
 Limitations
