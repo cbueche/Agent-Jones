@@ -31,9 +31,9 @@ Features
 Screenshots
 -----------
 
-Everyone wants screenshots. 
-	- ![device info](doc/aj_device.png?raw=true).
-	- ![interface list](doc/aj_interfaces.png?raw=true).
+Everyone wants screenshots. Here are some for "device info" and "interface list", when tested from [Postman](http://www.getpostman.com/).
+	![device info](doc/aj_device.png?raw=true).
+	![interface list](doc/aj_interfaces.png?raw=true).
 
 
 Limitations
