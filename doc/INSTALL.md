@@ -1,7 +1,7 @@
 Installation
 ------------
 
-Installation must be done within a Python virtual environment. The goal is to isolate your application from courageaous system administrators running OS upgrades without thinking first.
+Installation must be done within a [Python virtual environment](http://www.virtualenv.org/). The goal is to isolate your application from courageaous system administrators running OS upgrades without thinking first.
 
     /opt/local/bin/virtualenv-2.6 --no-site-packages aj
     cd aj

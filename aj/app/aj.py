@@ -47,6 +47,7 @@ import credentials
 import utils
 import access_checks
 import error_handling
+import sysoidan
 
 # Snimpy SNMP lib and MIB loading
 from snimpy.manager import Manager as M
@@ -79,6 +80,9 @@ load(mib_path + "CISCO-VLAN-MEMBERSHIP-MIB.my")
 
 # for Mac collection
 load(mib_path + "BRIDGE-MIB.my")
+
+# to identify Cisco products
+load(mib_path + "CISCO-PRODUCTS-MIB.my")
 
 
 
@@ -141,6 +145,9 @@ class DeviceAPI(restful.Resource):
 
         logger.debug('fn=DeviceAPI/get : %s : get serial numbers' % devicename)
         deviceinfo['entities'] = self.get_serial(m, devicename)
+
+        # sysoid mapping
+        (deviceinfo['hwVendor'], deviceinfo['hwModel']) = sysoidmap.translate_sysoid(deviceinfo['sysObjectID'])
 
         tend = datetime.now()
         tdiff = tend - tstart
@@ -500,7 +507,12 @@ class MacAPI(restful.Resource):
 
                     # lookup vendor from OUI database
                     mac = netaddr.EUI(mac_entry)
-                    vendor = mac.oui.registration().org
+                    # some vendors are not in
+                    try:
+                        vendor = mac.oui.registration().org
+                    except Exception, e:
+                        logger.info("fn=MacAPI/get_macs_from_device : %s : vendor lookup failed : %s" % (devicename, e))
+                        vendor = 'unknown'
 
                     mac_record = {'mac': str(mac), 'vendor': vendor}
                     if ifindex in macs:
@@ -893,6 +905,9 @@ util = utils.Utilities()
 
 # standardized error codes
 errst = error_handling.Errors()
+
+# sysoid mapping
+sysoidmap = sysoidan.SysOidAn()
 
 
 # -----------------------------------------------------------------------------------
