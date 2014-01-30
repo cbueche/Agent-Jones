@@ -134,20 +134,28 @@ class DeviceAPI(restful.Resource):
         if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
-        m = M(host = devicename, community = ro_community, version = 2, timeout=2, retries=2, none=True)
-        deviceinfo['sysName'] = m.sysName
         logger.debug('fn=DeviceAPI/get : %s : request device info' % devicename)
-        deviceinfo['sysDescr']    = m.sysDescr
-        deviceinfo['sysContact']  = m.sysContact
-        deviceinfo['sysLocation'] = m.sysLocation
-        deviceinfo['sysObjectID'] = str(m.sysObjectID)
-        deviceinfo['sysUpTime']   = int(m.sysUpTime) / 100
+        m = M(host = devicename, community = ro_community, version = 2, timeout=2, retries=2, none=True)
 
-        logger.debug('fn=DeviceAPI/get : %s : get serial numbers' % devicename)
-        deviceinfo['entities'] = self.get_serial(m, devicename)
+        # all SNMP gets under one big try
+        try:
 
-        # sysoid mapping
-        (deviceinfo['hwVendor'], deviceinfo['hwModel']) = sysoidmap.translate_sysoid(deviceinfo['sysObjectID'])
+            deviceinfo['sysName']     = m.sysName
+            deviceinfo['sysDescr']    = m.sysDescr
+            deviceinfo['sysContact']  = m.sysContact
+            deviceinfo['sysLocation'] = m.sysLocation
+            deviceinfo['sysObjectID'] = str(m.sysObjectID)
+            deviceinfo['sysUpTime']   = int(m.sysUpTime) / 100
+
+            logger.debug('fn=DeviceAPI/get : %s : get serial numbers' % devicename)
+            deviceinfo['entities'] = self.get_serial(m, devicename)
+
+            # sysoid mapping
+            (deviceinfo['hwVendor'], deviceinfo['hwModel']) = sysoidmap.translate_sysoid(deviceinfo['sysObjectID'])
+
+        except Exception, e:
+            logger.error("fn=DeviceAPI/get : %s : SNMP get failed : %s" % (devicename, e))
+            return errst.status('ERROR_OP', 'SNMP get failed on %s, cause : %s' % (devicename, e)), 200
 
         tend = datetime.now()
         tdiff = tend - tstart
@@ -318,54 +326,61 @@ class InterfaceAPI(restful.Resource):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         deviceinfo = autovivification.AutoVivification()
-        deviceinfo['name']      = devicename
+        deviceinfo['name'] = devicename
 
         logger.debug('fn=InterfaceAPI/get : %s : creating the snimpy manager' % devicename)
         m = M(host = devicename, community = ro_community, version = 2, timeout=2, retries=2, none=True)
-        deviceinfo['sysName'] = m.sysName
 
-        # get the mac list
-        if showmac:
-            macAPI = MacAPI()
-            macs = macAPI.get_macs_from_device(devicename, m, ro_community)
+        # all SNMP gets under one big try
+        try:
 
-        if showvlannames:
-            vlanAPI = vlanlistAPI()
-            vlans = vlanAPI.get_vlans(devicename, m, ro_community)
+            deviceinfo['sysName'] = m.sysName
 
-        logger.debug('fn=DeviceAPI/get : %s : get interface info' % devicename)
-        interfaces = []
-        for index in m.ifDescr:
-            interface = {}
-            logger.debug('fn=DeviceAPI/get : %s : get interface info for index %s' % (devicename, index))
-            interface['index']                                         = index
-            interface['ifAdminStatus'], interface['ifAdminStatusText'] = util.translate_status(str(m.ifAdminStatus[index]))
-            interface['ifOperStatus'], interface['ifOperStatusText']   = util.translate_status(str(m.ifOperStatus[index]))
-            interface['ifType']                                        = str(m.ifType[index])
-            interface['ifMtu']                                         = m.ifMtu[index]
-            interface['ifSpeed']                                       = m.ifSpeed[index]
-            interface['ifDescr']                                       = str(m.ifDescr[index])
-            interface['ifAlias']                                       = str(m.ifAlias[index])
-            vlan_nr = m.vmVlan[index]
-            if showvlannames:
-                if vlan_nr in vlans:
-                    vlan_name = vlans[vlan_nr]['name']
-                else:
-                    vlan_name = ''
-                # lookup table for VLAN names
-                interface['vmVlanNative']                                  = {'nr': vlan_nr, 'name': vlan_name}
-            else:
-                interface['vmVlanNative']                                  = {'nr': vlan_nr, 'name': ''}
+            # get the mac list
             if showmac:
-                if index in macs:
-                    interface['macs']                                      = macs[index]
+                macAPI = MacAPI()
+                macs = macAPI.get_macs_from_device(devicename, m, ro_community)
+
+            if showvlannames:
+                vlanAPI = vlanlistAPI()
+                vlans = vlanAPI.get_vlans(devicename, m, ro_community)
+
+            logger.debug('fn=DeviceAPI/get : %s : get interface info' % devicename)
+            interfaces = []
+            for index in m.ifDescr:
+                interface = {}
+                logger.debug('fn=DeviceAPI/get : %s : get interface info for index %s' % (devicename, index))
+                interface['index']                                         = index
+                interface['ifAdminStatus'], interface['ifAdminStatusText'] = util.translate_status(str(m.ifAdminStatus[index]))
+                interface['ifOperStatus'], interface['ifOperStatusText']   = util.translate_status(str(m.ifOperStatus[index]))
+                interface['ifType']                                        = str(m.ifType[index])
+                interface['ifMtu']                                         = m.ifMtu[index]
+                interface['ifSpeed']                                       = m.ifSpeed[index]
+                interface['ifDescr']                                       = str(m.ifDescr[index])
+                interface['ifAlias']                                       = str(m.ifAlias[index])
+                vlan_nr = m.vmVlan[index]
+                if showvlannames:
+                    if vlan_nr in vlans:
+                        vlan_name = vlans[vlan_nr]['name']
+                    else:
+                        vlan_name = ''
+                    # lookup table for VLAN names
+                    interface['vmVlanNative']                                  = {'nr': vlan_nr, 'name': vlan_name}
                 else:
-                    interface['macs'] = []
-            interfaces.append(interface)
-        deviceinfo['interfaces'] = interfaces
+                    interface['vmVlanNative']                                  = {'nr': vlan_nr, 'name': ''}
+                if showmac:
+                    if index in macs:
+                        interface['macs']                                      = macs[index]
+                    else:
+                        interface['macs'] = []
+                interfaces.append(interface)
+            deviceinfo['interfaces'] = interfaces
 
+        except Exception, e:
+            logger.error("fn=InterfaceAPI/get : %s : SNMP get failed : %s" % (devicename, e))
+            return errst.status('ERROR_OP', 'SNMP get failed on %s, cause : %s' % (devicename, e)), 200
 
-        # FIXME : an interface could belong to many VLANs when trunking.
+        # TODO : an interface could belong to many VLANs when trunking.
         # in Netdisco, named "VLAN Membership". The Native VLAN is now done using vmVlan,
         # the listing of secondary VLANs is not implemented yet
 
@@ -404,20 +419,28 @@ class InterfaceCounterAPI(restful.Resource):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         deviceinfo = autovivification.AutoVivification()
-        deviceinfo['name']      = devicename
+        deviceinfo['name'] = devicename
 
         logger.debug('fn=InterfaceCounterAPI/get : %s : creating the snimpy manager' % devicename)
         m = M(host = devicename, community = ro_community, version = 2, timeout=2, retries=2, none=True)
-        deviceinfo['sysName'] = m.sysName
-        deviceinfo['interface'] = str(m.ifDescr[ifindex])
 
-        logger.debug('fn=InterfaceCounterAPI/get : %s : get interface counters' % devicename)
-        counters = {}
-        counters['ifHCInOctets'] = m.ifHCInOctets[ifindex]
-        counters['ifHCOutOctets'] = m.ifHCOutOctets[ifindex]
-        counters['ifInErrors'] = m.ifInErrors[ifindex]
-        counters['ifOutErrors'] = m.ifOutErrors[ifindex]
-        deviceinfo['counters'] = counters
+        # all SNMP gets under one big try
+        try:
+
+            deviceinfo['sysName'] = m.sysName
+            deviceinfo['interface'] = str(m.ifDescr[ifindex])
+
+            logger.debug('fn=InterfaceCounterAPI/get : %s : get interface counters' % devicename)
+            counters = {}
+            counters['ifHCInOctets'] = m.ifHCInOctets[ifindex]
+            counters['ifHCOutOctets'] = m.ifHCOutOctets[ifindex]
+            counters['ifInErrors'] = m.ifInErrors[ifindex]
+            counters['ifOutErrors'] = m.ifOutErrors[ifindex]
+            deviceinfo['counters'] = counters
+
+        except Exception, e:
+            logger.error("fn=InterfaceCounterAPI/get : %s : SNMP get failed : %s" % (devicename, e))
+            return errst.status('ERROR_OP', 'SNMP get failed on %s, cause : %s' % (devicename, e)), 200
 
         tend = datetime.now()
         tdiff = tend - tstart
@@ -454,21 +477,26 @@ class MacAPI(restful.Resource):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         deviceinfo = autovivification.AutoVivification()
-        deviceinfo['name']      = devicename
+        deviceinfo['name'] = devicename
 
         logger.debug('fn=InterfaceAPI/get : %s : creating the snimpy manager' % devicename)
         m = M(host = devicename, community = ro_community, version = 2, timeout=2, retries=2, none=True)
-        deviceinfo['sysName'] = m.sysName
 
-        macs = self.get_macs_from_device(devicename, m, ro_community)
+        try:
+            deviceinfo['sysName'] = m.sysName
 
-        macs_organized = []
-        for ifindex in macs:
-            entry = {}
-            entry["index"] = ifindex
-            maclist = macs[ifindex]
-            entry["macs"] = maclist
-            macs_organized.append(entry)
+            macs = self.get_macs_from_device(devicename, m, ro_community)
+
+            macs_organized = []
+            for ifindex in macs:
+                entry = {}
+                entry["index"] = ifindex
+                entry["macs"] = macs[ifindex]
+                macs_organized.append(entry)
+
+        except Exception, e:
+            logger.error("fn=MacAPI/get : %s : SNMP get failed : %s" % (devicename, e))
+            return errst.status('ERROR_OP', 'SNMP get failed on %s, cause : %s' % (devicename, e)), 200
 
         tend = datetime.now()
         tdiff = tend - tstart
@@ -552,22 +580,29 @@ class vlanlistAPI(restful.Resource):
         deviceinfo['name'] = devicename
 
         logger.debug('fn=vlanlistAPI/get : %s : creating the snimpy manager' % devicename)
-
         m = M(host = devicename, community = ro_community, version = 2, timeout=2, retries=2, none=True)
-        deviceinfo['sysName'] = m.sysName
 
-        logger.debug('fn=vlanlistAPI/get : %s : get vlan list' % devicename)
-        vlans_lookup_table = self.get_vlans(devicename, m, ro_community)
+        # all SNMP gets under one big try
+        try:
 
-        vlans = []
-        for entry in vlans_lookup_table:
-            vlan = {}
-            vlan['nr'] = entry
-            vlan['type'] = vlans_lookup_table[entry]['type']
-            vlan['state'] = vlans_lookup_table[entry]['state']
-            vlan['name']  = vlans_lookup_table[entry]['name']
-            vlans.append(vlan)
-        deviceinfo['vlans'] = vlans
+            deviceinfo['sysName'] = m.sysName
+
+            logger.debug('fn=vlanlistAPI/get : %s : get vlan list' % devicename)
+            vlans_lookup_table = self.get_vlans(devicename, m, ro_community)
+
+            vlans = []
+            for entry in vlans_lookup_table:
+                vlan = {}
+                vlan['nr'] = entry
+                vlan['type'] = vlans_lookup_table[entry]['type']
+                vlan['state'] = vlans_lookup_table[entry]['state']
+                vlan['name']  = vlans_lookup_table[entry]['name']
+                vlans.append(vlan)
+            deviceinfo['vlans'] = vlans
+
+        except Exception, e:
+            logger.error("fn=vlanlistAPI/get : %s : SNMP get failed : %s" % (devicename, e))
+            return errst.status('ERROR_OP', 'SNMP get failed on %s, cause : %s' % (devicename, e)), 200
 
         tend = datetime.now()
         tdiff = tend - tstart
@@ -634,8 +669,15 @@ class PortToVlanAPI(restful.Resource):
         logger.debug('fn=PortToVlanAPI/get : %s : creating the snimpy manager' % devicename)
         m = M(host = devicename, community = rw_community, version = 2, timeout=2, retries=2, none=True)
 
-        # assign the vlan to the port
-        m.vmVlan[ifindex] = vlan
+        # all SNMP ops under one big try
+        try:
+
+            # assign the vlan to the port
+            m.vmVlan[ifindex] = vlan
+
+        except Exception, e:
+            logger.error("fn=DeviceAPI/get : %s : SNMP get failed : %s" % (devicename, e))
+            return errst.status('ERROR_OP', 'SNMP get failed on %s, cause : %s' % (devicename, e)), 200
 
         tend = datetime.now()
         tdiff = tend - tstart
@@ -738,10 +780,9 @@ class OIDpumpAPI(restful.Resource):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         deviceinfo = autovivification.AutoVivification()
-        deviceinfo['name']      = devicename
+        deviceinfo['name'] = devicename
 
         logger.debug('fn=OIDpumpAPI/get : %s : creating the SNMP session' % devicename)
-        # m = M(host = devicename, community = ro_community, version = 2, timeout=2, retries=2, none=True)
         session = snmp.Session(devicename, community = ro_community, version=2)
 
         if pdu == 'get':
