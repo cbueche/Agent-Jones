@@ -57,7 +57,6 @@ from snimpy import snmp
 mib_path = script_path + '/mibs/'
 
 # base MIB
-# load("/usr/share/snmp/mibs/IANAifType-MIB.txt")
 load(mib_path + "IANAifType-MIB.my")
 load(mib_path + "IF-MIB.my")
 load(mib_path + "SNMPv2-MIB.my")
@@ -148,7 +147,8 @@ class DeviceAPI(restful.Resource):
             deviceinfo['sysUpTime']   = int(m.sysUpTime) / 100
 
             logger.debug('fn=DeviceAPI/get : %s : get serial numbers' % devicename)
-            deviceinfo['entities'] = self.get_serial(m, devicename)
+            (max_switches, deviceinfo['entities']) = self.get_serial(m, devicename)
+            deviceinfo['cswMaxSwitchNum'] = max_switches
 
             # sysoid mapping
             (deviceinfo['hwVendor'], deviceinfo['hwModel']) = sysoidmap.translate_sysoid(deviceinfo['sysObjectID'])
@@ -175,7 +175,6 @@ class DeviceAPI(restful.Resource):
         # first, find out if the switch is stacked :
         # when working, use 0 for non stack and 1 for stacks in the top-parent search below
         max_switches = m.cswMaxSwitchNum
-        # logger.debug("stack cswMaxSwitchNum=%s" % max_switches)
 
         if max_switches is not None:
             parent_search_stop_at = 1
@@ -199,7 +198,7 @@ class DeviceAPI(restful.Resource):
             logger.warn("fn=DeviceAPI/get_serial : %s : could not get an entity parent" % devicename)
             return errst.status('ERROR_MIB_ENTITY', 'could not get an entity parent in get_serial')
         else:
-            return hardware_info
+            return (max_switches, hardware_info)
 
 
 

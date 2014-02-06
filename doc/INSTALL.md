@@ -21,6 +21,11 @@ OS X: run this before "pip":
 
     export C_INCLUDE_PATH=/opt/local/include (use your correct path, this is for macports)
 
+Ubuntu:
+
+    sudo apt-get install python-dev smistrip tmux traceroute unzip libsmi2-dev libffi-dev snmp-mibs-downloader
+
+
 
 Configuration
 -------------
