@@ -8,8 +8,7 @@ Mostly switches, but it could as well be used for routers. It is the back-end pa
 Magic-Button and other nice front-ends we are developing.
 
 Author : Ch. Bueche
-Repository : FIXME
-Documentation : FIXME
+Repository & documentation : https://github.com/cbueche/Agent-Jones
 
 '''
 
@@ -56,7 +55,16 @@ from snimpy import snmp
 
 mib_path = script_path + '/mibs/'
 
-# base MIB
+# RTF FAQ 
+os.environ['SMIPATH'] = mib_path
+
+# base MIBs that everyone uses at some point
+load(mib_path + "SNMPv2-SMI.my")
+load(mib_path + "SNMPv2-TC.my")
+load(mib_path + "SNMPv2-CONF.my")
+load(mib_path + "SNMP-FRAMEWORK-MIB.my")
+load(mib_path + "INET-ADDRESS-MIB.my")
+load(mib_path + "RMON-MIB.my")
 load(mib_path + "IANAifType-MIB.my")
 load(mib_path + "IF-MIB.my")
 load(mib_path + "SNMPv2-MIB.my")

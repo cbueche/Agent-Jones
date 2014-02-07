@@ -105,6 +105,8 @@ Author
 Support
 -------
 
+Start by [reading the FAQ](doc/FAQ.md).
+
 For easy questions, [feel free to email me](http://address-protector.com/frTvcQ8oOaRDkfAzpUdS3oXFYt7cPQ8kLrI4lg2n4TblNc83DGf4yhBUfdrndqvn). For more, I will be very happy to provide commercial support.
 
 

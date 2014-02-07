@@ -21,7 +21,7 @@ OS X: run this before "pip":
 
     export C_INCLUDE_PATH=/opt/local/include (use your correct path, this is for macports)
 
-Ubuntu:
+Ubuntu: this might not be strictly needed anymore, but I have no fresh system to test. It was needed before I added all needed MIBs. YMMV.
 
     sudo apt-get install python-dev smistrip tmux traceroute unzip libsmi2-dev libffi-dev snmp-mibs-downloader
 
