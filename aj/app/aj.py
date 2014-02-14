@@ -47,6 +47,7 @@ import utils
 import access_checks
 import error_handling
 import sysoidan
+import sshcmd
 
 # Snimpy SNMP lib and MIB loading
 from snimpy.manager import Manager as M
@@ -832,6 +833,62 @@ class OIDpumpAPI(restful.Resource):
 
 
 # -----------------------------------------------------------------------------------
+# PUT on a device : run commands over ssh
+# /aj/api/v1/device/ssh/$fqdn
+# -----------------------------------------------------------------------------------
+class DeviceSshAPI(restful.Resource):
+    __doc__ = '''{
+        "name": "DeviceSshAPI", 
+        "description": "PUT on a device : run commands over ssh", 
+        "auth": true,
+        "auth-type": "BasicAuth",
+        "params": ["driver=ios", "CmdList=list (JSON, indexed by cmds)", "uuid=UUID (optional, used to identify the write request in logs)"],
+        "returns": "status and output indexed by commands"
+    }'''
+    """ PUT on a device : run commands over ssh """
+    decorators = [auth.login_required]
+
+    # check arguments
+    def __init__(self):
+        self.reqparse = reqparse.RequestParser()
+        self.reqparse.add_argument('CmdList',       type = str, required = True, help = 'missing command list')
+        self.reqparse.add_argument('uuid',          type = str, required = mandate_uuid, help = 'No uuid provided')
+        self.reqparse.add_argument('driver',        type = str, required = True, help = 'missing driver, use one of http://knipknap.github.io/exscript/api/Exscript.protocols.drivers-module.html, eg ios')
+        super(DeviceSshAPI, self).__init__()
+
+    def put(self, devicename):
+
+        args = self.reqparse.parse_args()
+        uuid = args['uuid']
+        driver = args['driver']
+        try:
+            cmdlist = loads(args['CmdList'])['cmds']
+        except Exception, e:
+            logger.error("fn=DeviceSshAPI/put : %s : %s : device configuration failed : cmds list is no valid JSON" % (devicename, e))
+            return errst.status('ERROR_OP', 'device configuration failed : cmds list is no valid JSON : %s. Try with something like this without the backslashes : {"cmds": ["terminal length 0", "show users", "show version"]}' % e), 500
+
+        logger.info('fn=DeviceSshAPI/put : %s : commands=%s, uuid=%s' % (devicename, cmdlist, uuid))
+
+        tstart = datetime.now()
+
+        (status, output_global, output_indexed) = commander.run_by_ssh(devicename, app.config['SSH_USER'], app.config['SSH_PASSWORD'], driver, cmdlist)
+
+        if status == 0:
+            logger.debug('fn=DeviceSshAPI/put : %s : status = %s, output global = %s' % (devicename, status, output_global))
+        else:
+            logger.error('fn=DeviceSshAPI/put : %s : status = %s, output global = %s' % (devicename, status, output_global))
+            return errst.status('ERROR_OP', 'device commands by ssh failed : status=%s, output=%s' % (status, output_indexed)), 200
+
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds + tdiff.days * 24 * 3600) * 10**6) / 1000
+
+        logger.debug('fn=DeviceSshAPI/put : %s : device commands successful' % devicename)
+        return {'info': 'device commands successful', 'duration': duration, 'output': output_indexed}
+
+
+
+# -----------------------------------------------------------------------------------
 # instanciate the Flask application and the REST api
 # -----------------------------------------------------------------------------------
 app = Flask(__name__)
@@ -927,6 +984,9 @@ doc.add(loads(InterfaceConfigAPI.__doc__),  '/aj/api/v1/interface/config/<string
 api.add_resource(OIDpumpAPI,                '/aj/api/v1/oidpump/<string:devicename>/<string:pdu>/<string:oid>')
 doc.add(loads(OIDpumpAPI.__doc__),          '/aj/api/v1/oidpump/<string:devicename>/<string:pdu>/<string:oid>',     OIDpumpAPI.__dict__['methods'])
 
+api.add_resource(DeviceSshAPI,              '/aj/api/v1/device/ssh/<string:devicename>')
+doc.add(loads(DeviceSshAPI.__doc__),        '/aj/api/v1/device/ssh/<string:devicename>',                            DeviceSshAPI.__dict__['methods'])
+
 
 # -----------------------------------------------------------------------------------
 # auto-doc for API
@@ -956,6 +1016,9 @@ errst = error_handling.Errors()
 
 # sysoid mapping
 sysoidmap = sysoidan.SysOidAn()
+
+# for SSH commands
+commander = sshcmd.SshCmd()
 
 
 # -----------------------------------------------------------------------------------

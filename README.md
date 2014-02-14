@@ -26,6 +26,7 @@ Features
 - List the connected MAC addresses : MAC(ethernet) to port mappings from a device.
 - Get the interface counters of one interface.
 - SNMP get or walk on a OID
+- Run commands over SSH
 
 
 Screenshots

@@ -6,7 +6,10 @@ Installation must be done within a [Python virtual environment](http://www.virtu
     /opt/local/bin/virtualenv-2.6 --no-site-packages aj
     cd aj
     source bin/activate 
-    pip install -r .../deployment/requirements.pip 
+    pip install -r .../deployment/requirements.pip
+    pip install PyCrypto
+    pip install https://github.com/knipknap/exscript/zipball/master
+    
     rsync -av .../app ./
     python aj.py
     # patch snimpy if needed : https://github.com/vincentbernat/snimpy/commit/6857ca3af5ca4858161e7e8e3985bd07ecd7b4a2

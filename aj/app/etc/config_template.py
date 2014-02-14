@@ -20,6 +20,9 @@ class Config(object):
     # if True, PUT and POST requests will need to contain a uuid parameter
     MANDATE_UUID = True
 
+    # those are used by the DeviceSshAPI call
+    SSH_USER = 'ssh-user'
+    SSH_PASSWORD = 'ssh-password'
 
 # values for prod
 class ProductionConfig(Config):
