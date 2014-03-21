@@ -52,6 +52,12 @@ The following IOS commands might be present on modeled devices to allow for long
     snmp mib persist cbqos
 
 
+Release Notes
+-------------
+
+See the [release notes](doc/RELEASES.md).
+
+
 Installation
 ------------
 

@@ -92,6 +92,8 @@ load(mib_path + "BRIDGE-MIB.my")
 # to identify Cisco products
 load(mib_path + "CISCO-PRODUCTS-MIB.my")
 
+# to get the duplex mode
+load(mib_path + "EtherLike-MIB.my")
 
 
 # -----------------------------------------------------------------------------------
@@ -266,7 +268,7 @@ class DeviceSaveAPI(restful.Resource):
             logger.debug('fn=DeviceSaveAPI/put : %s : operation %d : start the transfer' % (devicename, opidx))
             m.ccCopyEntryRowStatus[opidx] = 1
 
-            # FIXME : detect timeout and return a failure in case
+            # detect timeout and return a failure in case
             write_timeout = app.config['DEVICE_SAVE_TIMEOUT']
             waited = 0
             step = 0.5
@@ -372,6 +374,7 @@ class InterfaceAPI(restful.Resource):
                 interface['ifSpeed']                                       = m.ifSpeed[index]
                 interface['ifDescr']                                       = str(m.ifDescr[index])
                 interface['ifAlias']                                       = str(m.ifAlias[index])
+                interface['dot3StatsDuplexStatus']                         = str(m.dot3StatsDuplexStatus[index])
                 vlan_nr = m.vmVlan[index]
                 if showvlannames:
                     if vlan_nr in vlans:

@@ -20,3 +20,6 @@ add these entries into your app/etc/config.py :
 
     # how long we should wait for a device config-save operation
     DEVICE_SAVE_TIMEOUT = 20
+
+
+- added duplex-mode to interface list
