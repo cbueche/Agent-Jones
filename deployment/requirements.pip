@@ -3,3 +3,4 @@ Flask-HTTPAuth>=2.2.0
 Flask-RESTful>=0.2.10
 netaddr>=0.7.10
 snimpy>=0.8.1
+Exscript==DEVELOPMENT

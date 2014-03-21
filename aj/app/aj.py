@@ -932,7 +932,14 @@ class DeviceSshAPI(restful.Resource):
 
         tstart = datetime.now()
 
+        # WSGI does not accept playing with stdin and stdout. Save them before doing ssh and restore them afterwards
+        save_stdout = sys.stdout
+        save_stdin = sys.stdin
+        sys.stdout = sys.stderr
+        sys.stdin = ''
         (status, output_global, output_indexed) = commander.run_by_ssh(devicename, app.config['SSH_USER'], app.config['SSH_PASSWORD'], driver, cmdlist)
+        sys.stdout = save_stdout
+        sys.stdin = save_stdin
 
         if status == 0:
             logger.debug('fn=DeviceSshAPI/put : %s : status = %s, output global = %s' % (devicename, status, output_global))
@@ -1089,12 +1096,14 @@ commander = sshcmd.SshCmd()
 
 @auth.get_password
 def get_password(username):
+    logger.debug('username : <%s>' % username)
     if username == app.config['BASIC_AUTH_USER']:
         return app.config['BASIC_AUTH_PASSWORD']
     return None
  
 @auth.error_handler
 def unauthorized():
+    logger.debug('not authorized')
     return make_response(jsonify( { 'message': 'Unauthorized access' } ), 401)
     # returning 403 instead of 401 would prevent browsers from displaying the default auth dialog
 
