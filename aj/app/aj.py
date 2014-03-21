@@ -95,6 +95,10 @@ load(mib_path + "CISCO-PRODUCTS-MIB.my")
 # to get the duplex mode
 load(mib_path + "EtherLike-MIB.my")
 
+# Power over Ethernet info
+load(mib_path + "POWER-ETHERNET-MIB.my")
+load(mib_path + "CISCO-POWER-ETHERNET-EXT-MIB.my")
+
 
 # -----------------------------------------------------------------------------------
 # collect the API dynamic documentation
@@ -156,6 +160,16 @@ class DeviceAPI(restful.Resource):
             deviceinfo['sysLocation'] = m.sysLocation
             deviceinfo['sysObjectID'] = str(m.sysObjectID)
             deviceinfo['sysUpTime']   = int(m.sysUpTime) / 100
+
+            # POE
+            poe_modules = []
+            for poe_module in m.pethMainPseConsumptionPower:
+                poe_modules.append({
+                    'poe_module': poe_module,
+                    'measured_power': m.pethMainPseConsumptionPower[poe_module],
+                    'nominal_power': m.pethMainPsePower[poe_module]
+                    })
+            deviceinfo['pethMainPsePower'] = poe_modules
 
             logger.debug('fn=DeviceAPI/get : %s : get serial numbers' % devicename)
             (max_switches, deviceinfo['entities']) = self.get_serial(m, devicename)
@@ -319,7 +333,7 @@ class DeviceSaveAPI(restful.Resource):
 class InterfaceAPI(restful.Resource):
     __doc__ = '''{
         "name": "InterfaceAPI", 
-        "description": "GET interfaces from a device. Adding ?showmac=1 to the URI will list the MAC addresses of devices connected to ports. Be aware that it makes the query much slower. Adding ?showvlannames=1 will show the vlan names for each vlan. It will as well make the query slower.", 
+        "description": "GET interfaces from a device. Adding ?showmac=1 to the URI will list the MAC addresses of devices connected to ports. Be aware that it makes the query much slower. Adding ?showvlannames=1 will show the vlan names for each vlan. It will as well make the query slower. Adding ?showpoe=1 will provide the power consumption for each port. Again, it will make the query slower",
         "auth": true,
         "auth-type": "BasicAuth",
         "params": [],
@@ -336,6 +350,7 @@ class InterfaceAPI(restful.Resource):
         # two possible query parameters
         showmac = request.args.get('showmac', 0)
         showvlannames = request.args.get('showvlannames', 0)
+        showpoe = request.args.get('showpoe', 0)
 
         ro_community = credmgr.get_credentials(devicename)['ro_community']
         if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
@@ -361,6 +376,9 @@ class InterfaceAPI(restful.Resource):
                 vlanAPI = vlanlistAPI()
                 vlans = vlanAPI.get_vlans(devicename, m, ro_community)
 
+            if showpoe:
+                poe = self.get_poe(devicename, m)
+
             logger.debug('fn=DeviceAPI/get : %s : get interface info' % devicename)
             interfaces = []
             for index in m.ifDescr:
@@ -376,6 +394,7 @@ class InterfaceAPI(restful.Resource):
                 interface['ifAlias']                                       = str(m.ifAlias[index])
                 interface['dot3StatsDuplexStatus']                         = str(m.dot3StatsDuplexStatus[index])
                 vlan_nr = m.vmVlan[index]
+
                 if showvlannames:
                     if vlan_nr in vlans:
                         vlan_name = vlans[vlan_nr]['name']
@@ -385,12 +404,23 @@ class InterfaceAPI(restful.Resource):
                     interface['vmVlanNative']                                  = {'nr': vlan_nr, 'name': vlan_name}
                 else:
                     interface['vmVlanNative']                                  = {'nr': vlan_nr, 'name': ''}
+
                 if showmac:
                     if index in macs:
                         interface['macs']                                      = macs[index]
                     else:
                         interface['macs'] = []
+
+                if showpoe:
+                    if interface['ifDescr'] in poe:
+                        interface['poeStatus'] = str(poe[interface['ifDescr']]['status'])
+                        interface['poePower'] = poe[interface['ifDescr']]['power']
+                    else:
+                        interface['poeStatus'] = ''
+                        interface['poePower'] = 0
+
                 interfaces.append(interface)
+
             deviceinfo['interfaces'] = interfaces
 
         except Exception, e:
@@ -409,6 +439,28 @@ class InterfaceAPI(restful.Resource):
         logger.info('fn=InterfaceAPI/get : %s : duration=%s' % (devicename, deviceinfo['query-duration']))
         return deviceinfo
 
+    def get_poe(self, devicename, m):
+        ''' get the POE info using the CISCO-POWER-ETHERNET-EXT-MIB and Entity-MIB
+
+            return a list of poe entries, indexed by port name (eg FastEthernet1/0/15)
+        '''
+        # first, create a mapping EntPhyIndex --> port name (eg FastEthernet1/0/6), as we don't have the if-idx in POE table below
+        port_mapping = {}
+        for entry in m.entPhysicalName:
+            port_mapping[entry] = m.entPhysicalName[entry]
+            logger.debug('fn=InterfaceAPI/get_poe : %s : ent-idx=%s, port-name=%s' % (devicename, entry, port_mapping[entry]))
+
+        # then, get the poe info. Returned entries are indexed by the port-name
+        poe = {}
+        for entry in m.cpeExtPsePortPwrConsumption:
+            entry_status = m.pethPsePortDetectionStatus[entry]
+            entry_power  = m.cpeExtPsePortPwrConsumption[entry]
+            entry_idx    = m.cpeExtPsePortEntPhyIndex[entry]
+            entry_port_name = port_mapping[entry_idx]
+            logger.debug('fn=InterfaceAPI/get_poe : %s : status=%s, power=%s, ent-idx=%s, port-name=%s' % (devicename, entry_status, entry_power, entry_idx, entry_port_name))
+            poe[entry_port_name] = {'status': entry_status, 'power': entry_power}
+
+        return poe
 
 
 # -----------------------------------------------------------------------------------
