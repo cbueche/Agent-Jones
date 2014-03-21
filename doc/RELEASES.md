@@ -23,3 +23,5 @@ add these entries into your app/etc/config.py :
 
 
 - added duplex-mode to interface list
+
+- added POE collection in device and interface APIs
