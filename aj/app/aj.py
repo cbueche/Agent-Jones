@@ -266,17 +266,23 @@ class DeviceSaveAPI(restful.Resource):
             logger.debug('fn=DeviceSaveAPI/put : %s : operation %d : start the transfer' % (devicename, opidx))
             m.ccCopyEntryRowStatus[opidx] = 1
 
-            write_timeout = 10
+            # FIXME : detect timeout and return a failure in case
+            write_timeout = app.config['DEVICE_SAVE_TIMEOUT']
             waited = 0
+            step = 0.5
             while(waited < write_timeout):
-                waited += 0.5
+                waited += step
                 state = m.ccCopyState[opidx]
                 if state == 3 or state == 4:
                     break
                 logger.debug("fn=DeviceSaveAPI/put : %s : operation %d : waiting for config save to finish" % (devicename, opidx))
-                time.sleep(0.5)
+                time.sleep(step)
 
             logger.debug("fn=DeviceSaveAPI/put : %s : operation %d : waited=%s seconds" % (devicename, opidx, waited))
+
+            if waited == write_timeout:
+                logger.error("fn=DeviceSaveAPI/put : %s : operation %d : copy failed, cause = timeout" % (devicename, opidx))
+                return errst.status('ERROR_OP', 'config save for %s failed, cause : timeout, operation-nr : %d' % (devicename, opidx)), 200
 
             # check
             if m.ccCopyState == 4:
@@ -932,10 +938,11 @@ api = restful.Api(app)
 # -----------------------------------------------------------------------------------
 
 import logging
+import logging.handlers
 log_file = app.config['LOGFILE']
 global logger
 logger = logging.getLogger('AJ')
-hdlr = logging.FileHandler(log_file)
+hdlr = logging.handlers.RotatingFileHandler(log_file, maxBytes=app.config['LOG_MAX_SIZE'], backupCount=app.config['LOG_BACKUP_COUNT'])
 # we have the PID in each log entry to differentiate parallel processes writing to the log
 formatter = logging.Formatter('%(asctime)s - %(process)d - %(levelname)s %(message)s')
 hdlr.setFormatter(formatter)

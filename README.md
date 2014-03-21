@@ -3,7 +3,7 @@ Agent-Jones
 
 Agent-Jones is a web-service used to configure and retrieve info from Cisco devices.
 Mostly switches, but it could as well be used for routers. Its goal is to serve as a back-end
-for nice GUIs and collectors applications. As such, it does't have has any GUI.
+for nice GUIs and collectors applications. As such, it doesn't have any GUI.
 
 The wholestuff is written in Python, using the [Flask](http://flask.pocoo.org/) micro-framework, and a very nice SNMP lib for Python called snimpy [1](http://vincent.bernat.im/en/blog/2013-snimpy.html), [2](https://github.com/vincentbernat/snimpy).
 
@@ -46,7 +46,7 @@ Limitations
 Assumptions
 -----------
 
-The following IOS commands might be present on modeled devices to allow for long-term indices persistence, but their presence are not guaranteed. The modeling does not dependent on them. There are anyway a good starting point for your Cisco configuration templates.
+The following IOS commands might be present on modeled devices to allow for long-term indices persistence, but their presence is not mandatory. They are anyway a good starting point for your Cisco configuration templates.
 
     snmp-server ifindex persist
     snmp mib persist cbqos
