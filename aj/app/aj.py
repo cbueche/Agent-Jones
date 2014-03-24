@@ -149,7 +149,7 @@ class DeviceAPI(restful.Resource):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         logger.debug('fn=DeviceAPI/get : %s : request device info' % devicename)
-        m = M(host = devicename, community = ro_community, version = 2, timeout=2, retries=2, none=True)
+        m = M(host = devicename, community = ro_community, version = 2, timeout=app.config['SNMP_TIMEOUT'], retries=app.config['SNMP_RETRIES'], none=True)
 
         # all SNMP gets under one big try
         try:
@@ -264,7 +264,7 @@ class DeviceSaveAPI(restful.Resource):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         logger.debug('fn=DeviceSaveAPI/get : %s : creating the snimpy manager' % devicename)
-        m = M(host = devicename, community = rw_community, version = 2, timeout=2, retries=2, none=True)
+        m = M(host = devicename, community = rw_community, version = 2, timeout=app.config['SNMP_TIMEOUT'], retries=app.config['SNMP_RETRIES'], none=True)
 
         # random operation index
         opidx = randint(1, 1000)
@@ -360,7 +360,7 @@ class InterfaceAPI(restful.Resource):
         deviceinfo['name'] = devicename
 
         logger.debug('fn=InterfaceAPI/get : %s : creating the snimpy manager' % devicename)
-        m = M(host = devicename, community = ro_community, version = 2, timeout=2, retries=2, none=True)
+        m = M(host = devicename, community = ro_community, version = 2, timeout=app.config['SNMP_TIMEOUT'], retries=app.config['SNMP_RETRIES'], none=True)
 
         # all SNMP gets under one big try
         try:
@@ -491,7 +491,7 @@ class InterfaceCounterAPI(restful.Resource):
         deviceinfo['name'] = devicename
 
         logger.debug('fn=InterfaceCounterAPI/get : %s : creating the snimpy manager' % devicename)
-        m = M(host = devicename, community = ro_community, version = 2, timeout=2, retries=2, none=True)
+        m = M(host = devicename, community = ro_community, version = 2, timeout=app.config['SNMP_TIMEOUT'], retries=app.config['SNMP_RETRIES'], none=True)
 
         # all SNMP gets under one big try
         try:
@@ -549,7 +549,7 @@ class MacAPI(restful.Resource):
         deviceinfo['name'] = devicename
 
         logger.debug('fn=InterfaceAPI/get : %s : creating the snimpy manager' % devicename)
-        m = M(host = devicename, community = ro_community, version = 2, timeout=2, retries=2, none=True)
+        m = M(host = devicename, community = ro_community, version = 2, timeout=app.config['SNMP_TIMEOUT'], retries=app.config['SNMP_RETRIES'], none=True)
 
         try:
             deviceinfo['sysName'] = m.sysName
@@ -596,7 +596,7 @@ class MacAPI(restful.Resource):
 
                 # VLAN-based community, have a local manager for each VLAN
                 vlan_community = "%s@%s" % (ro_community, vlan_nr)
-                lm = M(host=devicename, community=vlan_community, version=2, timeout=2, retries=2, none=True)
+                lm = M(host=devicename, community=vlan_community, version=2, timeout=app.config['SNMP_TIMEOUT'], retries=app.config['SNMP_RETRIES'], none=True)
 
                 for mac_entry in lm.dot1dTpFdbAddress:
                     port = lm.dot1dTpFdbPort[mac_entry]
@@ -649,7 +649,7 @@ class vlanlistAPI(restful.Resource):
         deviceinfo['name'] = devicename
 
         logger.debug('fn=vlanlistAPI/get : %s : creating the snimpy manager' % devicename)
-        m = M(host = devicename, community = ro_community, version = 2, timeout=2, retries=2, none=True)
+        m = M(host = devicename, community = ro_community, version = 2, timeout=app.config['SNMP_TIMEOUT'], retries=app.config['SNMP_RETRIES'], none=True)
 
         # all SNMP gets under one big try
         try:
@@ -736,7 +736,7 @@ class PortToVlanAPI(restful.Resource):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         logger.debug('fn=PortToVlanAPI/get : %s : creating the snimpy manager' % devicename)
-        m = M(host = devicename, community = rw_community, version = 2, timeout=2, retries=2, none=True)
+        m = M(host = devicename, community = rw_community, version = 2, timeout=app.config['SNMP_TIMEOUT'], retries=app.config['SNMP_RETRIES'], none=True)
 
         # all SNMP ops under one big try
         try:
@@ -799,7 +799,7 @@ class InterfaceConfigAPI(restful.Resource):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         logger.debug('fn=InterfaceConfigAPI/put : %s : creating the snimpy manager' % devicename)
-        m = M(host = devicename, community = rw_community, version = 2, timeout=2, retries=2, none=True)
+        m = M(host = devicename, community = rw_community, version = 2, timeout=app.config['SNMP_TIMEOUT'], retries=app.config['SNMP_RETRIES'], none=True)
 
         try:
             # assign the values to the port

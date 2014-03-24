@@ -31,6 +31,10 @@ class Config(object):
     # how long we should wait for a device config-save operation
     DEVICE_SAVE_TIMEOUT = 20
 
+    # global SNMP timeout and retry
+    SNMP_TIMEOUT = 2
+    SNMP_RETRIES = 2
+
 
 # values for prod
 class ProductionConfig(Config):
