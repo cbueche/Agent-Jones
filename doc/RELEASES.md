@@ -2,6 +2,13 @@ Release notes
 =============
 
 
+24.3.2014
+---------
+
+- SNMP timeout and retries are not configurable in config.py (see how in config_template.py)
+
+
+
 21.3.3014
 ---------
 
