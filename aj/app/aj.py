@@ -473,7 +473,7 @@ class InterfaceCounterAPI(restful.Resource):
         "auth": true,
         "auth-type": "BasicAuth",
         "params": [],
-        "returns": "A list of interfaces counters."
+        "returns": "A list of interfaces counters. Use inOctets and outOctets to get an octet counter independent of 64 bit (ifX HC) capabilities of the target."
     }'''
     decorators = [auth.login_required]
 
@@ -505,6 +505,14 @@ class InterfaceCounterAPI(restful.Resource):
             counters['ifHCOutOctets'] = m.ifHCOutOctets[ifindex]
             counters['ifInErrors'] = m.ifInErrors[ifindex]
             counters['ifOutErrors'] = m.ifOutErrors[ifindex]
+
+            if counters['ifHCInOctets'] or counters['ifHCInOctets']: 
+                counters['inOctets'] = m.ifHCInOctets[ifindex]
+                counters['outOctets'] = m.ifHCOutOctets[ifindex]
+            else:
+                counters['inOctets'] = m.ifInOctets[ifindex]
+                counters['outOctets'] = m.ifOutOctets[ifindex]
+
             deviceinfo['counters'] = counters
 
         except Exception, e:
