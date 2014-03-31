@@ -501,16 +501,16 @@ class InterfaceCounterAPI(restful.Resource):
 
             logger.debug('fn=InterfaceCounterAPI/get : %s : get interface counters' % devicename)
             counters = {}
-            counters['ifHCInOctets'] = m.ifHCInOctets[ifindex]
+            counters['ifHCInOctets']  = m.ifHCInOctets[ifindex]
             counters['ifHCOutOctets'] = m.ifHCOutOctets[ifindex]
-            counters['ifInErrors'] = m.ifInErrors[ifindex]
-            counters['ifOutErrors'] = m.ifOutErrors[ifindex]
+            counters['ifInErrors']    = m.ifInErrors[ifindex]
+            counters['ifOutErrors']   = m.ifOutErrors[ifindex]
 
-            if counters['ifHCInOctets'] or counters['ifHCInOctets']: 
-                counters['inOctets'] = m.ifHCInOctets[ifindex]
-                counters['outOctets'] = m.ifHCOutOctets[ifindex]
+            if counters['ifHCInOctets'] and counters['ifHCInOctets']:
+                counters['inOctets']  = counters['ifHCInOctets']
+                counters['outOctets'] = counters['ifHCOutOctets']
             else:
-                counters['inOctets'] = m.ifInOctets[ifindex]
+                counters['inOctets']  = m.ifInOctets[ifindex]
                 counters['outOctets'] = m.ifOutOctets[ifindex]
 
             deviceinfo['counters'] = counters
