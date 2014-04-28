@@ -22,3 +22,15 @@ I'm getting ERROR or WARNING fn=InterfaceAPI/get : devicename : SNMP get failed 
 
 Be sure to install the latest version. I have added some sanity code to cover Cisco's creativity in dot1dBasePortIfIndex.
 
+
+
+Miscellaneous
+-------------
+
+I'm getting a lot of unknown vendors when using showmac=1
+
+You may want to update the netaddr pip module using 
+
+    pip install --upgrade netaddr
+
+However, I have found some gear vendors using MAC prefixes out of nowhere, unknown from the oifficial IEEE/OUI database. I'm not sure if those vendors shall be blamed or if I misunderstood the OUI standard.
