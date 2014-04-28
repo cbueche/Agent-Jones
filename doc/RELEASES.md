@@ -2,6 +2,12 @@ Release notes
 =============
 
 
+28.4.2014
+---------
+
+- avoid issue with unexistant ports returned by dot1dBasePortIfIndex. It was producing exceptions when using showmac=1 on Cisco C2960S and possibly other models as well.
+
+
 24.3.2014
 ---------
 
