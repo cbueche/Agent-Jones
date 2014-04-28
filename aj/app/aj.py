@@ -56,7 +56,7 @@ from snimpy import snmp
 
 mib_path = script_path + '/mibs/'
 
-# RTF FAQ 
+# RTF FAQ
 os.environ['SMIPATH'] = mib_path
 
 # base MIBs that everyone uses at some point
@@ -125,8 +125,8 @@ class DocCollection():
 # -----------------------------------------------------------------------------------
 class DeviceAPI(restful.Resource):
     __doc__ = '''{
-        "name": "DeviceAPI", 
-        "description": "GET info from a single device.", 
+        "name": "DeviceAPI",
+        "description": "GET info from a single device.",
         "auth": true,
         "auth-type": "BasicAuth",
         "params": [],
@@ -211,7 +211,7 @@ class DeviceAPI(restful.Resource):
         for i in m.entPhysicalContainedIn:
             if m.entPhysicalContainedIn[i] == parent_search_stop_at:
                 parent = i
-                hardware_info.append({  
+                hardware_info.append({
                     'physicalDescr':        m.entPhysicalDescr[parent],
                     'physicalHardwareRev':  m.entPhysicalHardwareRev[parent],
                     'physicalFirmwareRev':  m.entPhysicalFirmwareRev[parent],
@@ -233,8 +233,8 @@ class DeviceAPI(restful.Resource):
 class DeviceSaveAPI(restful.Resource):
     '''
     {
-        "name": "DeviceSaveAPI", 
-        "description": "save the running-config to startup-config", 
+        "name": "DeviceSaveAPI",
+        "description": "save the running-config to startup-config",
         "auth": true,
         "auth-type": "BasicAuth",
         "params": ["uuid=UUID (optional, used to identify the write request in logs)"],
@@ -259,7 +259,7 @@ class DeviceSaveAPI(restful.Resource):
         tstart = datetime.now()
 
         rw_community = credmgr.get_credentials(devicename)['rw_community']
-      
+
         if not check.check_snmp(logger, M, devicename, rw_community, 'RW'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
@@ -332,7 +332,7 @@ class DeviceSaveAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 class InterfaceAPI(restful.Resource):
     __doc__ = '''{
-        "name": "InterfaceAPI", 
+        "name": "InterfaceAPI",
         "description": "GET interfaces from a device. Adding ?showmac=1 to the URI will list the MAC addresses of devices connected to ports. Be aware that it makes the query much slower. Adding ?showvlannames=1 will show the vlan names for each vlan. It will as well make the query slower. Adding ?showpoe=1 will provide the power consumption for each port. Again, it will make the query slower",
         "auth": true,
         "auth-type": "BasicAuth",
@@ -468,8 +468,8 @@ class InterfaceAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 class InterfaceCounterAPI(restful.Resource):
     __doc__ = '''{
-        "name": "InterfaceCounterAPI", 
-        "description": "GET interface counters of one interface", 
+        "name": "InterfaceCounterAPI",
+        "description": "GET interface counters of one interface",
         "auth": true,
         "auth-type": "BasicAuth",
         "params": [],
@@ -534,8 +534,8 @@ class InterfaceCounterAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 class MacAPI(restful.Resource):
     __doc__ = '''{
-        "name": "MacAPI", 
-        "description": "MAC(ethernet) to port mappings from a device", 
+        "name": "MacAPI",
+        "description": "MAC(ethernet) to port mappings from a device",
         "auth": true,
         "auth-type": "BasicAuth",
         "params": [],
@@ -608,12 +608,17 @@ class MacAPI(restful.Resource):
 
                 for mac_entry in lm.dot1dTpFdbAddress:
                     port = lm.dot1dTpFdbPort[mac_entry]
-                    ifindex = lm.dot1dBasePortIfIndex[port]
+                    if port == None:
+                        logger.debug("fn=MacAPI/get_macs_from_device : %s : skip port=None" % (devicename))
+                        continue
 
-                    # lookup vendor from OUI database
-                    mac = netaddr.EUI(mac_entry)
-                    # some vendors are not in
                     try:
+                        ifindex = lm.dot1dBasePortIfIndex[port]
+                    except Exception, e:
+                        logger.debug("fn=MacAPI/get_macs_from_device : %s : port=%s, mac_entry_idx lookup failed : %s" % (devicename, port, e))
+
+                    try:
+                        mac = netaddr.EUI(mac_entry)
                         vendor = mac.oui.registration().org
                     except Exception, e:
                         logger.info("fn=MacAPI/get_macs_from_device : %s : vendor lookup failed : %s" % (devicename, e))
@@ -634,8 +639,8 @@ class MacAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 class vlanlistAPI(restful.Resource):
     __doc__ = '''{
-        "name": "vlanlistAPI", 
-        "description": "GET vlan list from a device", 
+        "name": "vlanlistAPI",
+        "description": "GET vlan list from a device",
         "auth": true,
         "auth-type": "BasicAuth",
         "params": [],
@@ -713,8 +718,8 @@ class vlanlistAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 class PortToVlanAPI(restful.Resource):
     __doc__ = '''{
-        "name": "PortToVlanAPI", 
-        "description": "PUT on a vlan : assign the port to a VLAN", 
+        "name": "PortToVlanAPI",
+        "description": "PUT on a vlan : assign the port to a VLAN",
         "auth": true,
         "auth-type": "BasicAuth",
         "params": ["vlan=NNN", "uuid=UUID (optional, used to identify the write request in logs)"],
@@ -738,7 +743,7 @@ class PortToVlanAPI(restful.Resource):
         logger.info('fn=PortToVlanAPI/put : %s : ifindex=%s, vlan=%s, uuid=%s' % (devicename, ifindex, vlan, uuid))
 
         tstart = datetime.now()
-      
+
         rw_community = credmgr.get_credentials(devicename)['rw_community']
         if not check.check_snmp(logger, M, devicename, rw_community, 'RW'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
@@ -773,8 +778,8 @@ class PortToVlanAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 class InterfaceConfigAPI(restful.Resource):
     __doc__ = '''{
-        "name": "InterfaceConfigAPI", 
-        "description": "PUT on an interface : configure the interface", 
+        "name": "InterfaceConfigAPI",
+        "description": "PUT on an interface : configure the interface",
         "auth": true,
         "auth-type": "BasicAuth",
         "params": ["ifAlias=TXT", "ifAdminStatus={1(up)|2(down)}", "uuid=UUID (optional, used to identify the write request in logs)"],
@@ -801,7 +806,7 @@ class InterfaceConfigAPI(restful.Resource):
         logger.info('fn=InterfaceConfigAPI/put : %s : ifindex=%s, ifAdminStatus=%s, ifAlias=%s, uuid=%s' % (devicename, ifindex, ifAdminStatus, ifAlias, uuid))
 
         tstart = datetime.now()
-      
+
         rw_community = credmgr.get_credentials(devicename)['rw_community']
         if not check.check_snmp(logger, M, devicename, rw_community, 'RW'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
@@ -837,8 +842,8 @@ class InterfaceConfigAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 class OIDpumpAPI(restful.Resource):
     __doc__ = '''{
-        "name": "OIDpumpAPI", 
-        "description": "SNMP get or walk on a OID. This is not completely tested, and walk tend to give back too much data. get can be used but usually needs a .0 at the end of the OID, so the URI to get sysUptime would be `/aj/api/v1/oidpump/devicename/get/1.3.6.1.2.1.1.3.0`, while the URI to walk ifName would be `/aj/api/v1/oidpump/devicename/walk/1.3.6.1.2.1.31.1.1.1.1`", 
+        "name": "OIDpumpAPI",
+        "description": "SNMP get or walk on a OID. This is not completely tested, and walk tend to give back too much data. get can be used but usually needs a .0 at the end of the OID, so the URI to get sysUptime would be `/aj/api/v1/oidpump/devicename/get/1.3.6.1.2.1.1.3.0`, while the URI to walk ifName would be `/aj/api/v1/oidpump/devicename/walk/1.3.6.1.2.1.31.1.1.1.1`",
         "auth": true,
         "auth-type": "BasicAuth",
         "params": [],
@@ -907,8 +912,8 @@ class OIDpumpAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 class DeviceSshAPI(restful.Resource):
     __doc__ = '''{
-        "name": "DeviceSshAPI", 
-        "description": "PUT on a device : run commands over ssh", 
+        "name": "DeviceSshAPI",
+        "description": "PUT on a device : run commands over ssh",
         "auth": true,
         "auth-type": "BasicAuth",
         "params": ["driver=ios", "CmdList=list (JSON, indexed by cmds)", "uuid=UUID (optional, used to identify the write request in logs)"],
@@ -1108,7 +1113,7 @@ def get_password(username):
     if username == app.config['BASIC_AUTH_USER']:
         return app.config['BASIC_AUTH_PASSWORD']
     return None
- 
+
 @auth.error_handler
 def unauthorized():
     logger.debug('not authorized')
@@ -1144,4 +1149,3 @@ if True:
         logger.info('AJ start')
         app.run(host='0.0.0.0', debug=True)
         logger.info('AJ end')
-
