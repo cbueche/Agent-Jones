@@ -571,7 +571,7 @@ class MacAPI(restful.Resource):
                 entry["macs"] = macs[ifindex]
                 macs_organized.append(entry)
 
-        except Exception, e:
+        except snmp.SNMPException, e:
             logger.error("fn=MacAPI/get : %s : SNMP get failed : %s" % (devicename, e))
             return errst.status('ERROR_OP', 'SNMP get failed on %s, cause : %s' % (devicename, e)), 200
 
@@ -606,7 +606,18 @@ class MacAPI(restful.Resource):
                 vlan_community = "%s@%s" % (ro_community, vlan_nr)
                 lm = M(host=devicename, community=vlan_community, version=2, timeout=app.config['SNMP_TIMEOUT'], retries=app.config['SNMP_RETRIES'], none=True)
 
-                for mac_entry in lm.dot1dTpFdbAddress:
+                # we pull them in an array so we can catch timeouts for broken IOS versions
+                # happened on a big stack of 8 Cisco 3750 running 12.2(46)SE (fc2)
+                # FIXME : this try/except never catches a SNMP timeout. Not sure why
+                try:
+                    logger.debug('fn=MacAPI/get_macs_from_device : trying to pull all mac_entries for vlan %s (%s)' % (vlan_nr, vlan_name))
+                    mac_entries = lm.dot1dTpFdbAddress
+                except snmp.SNMPException, e:
+                    logger.warn("fn=MacAPI/get_macs_from_device : failed with %s, probably an unused VLAN on a buggy IOS producing SNMP timeout. Ignoring this VLAN" % (e))
+                    continue
+
+                # now we have some data for this VLAN, loop over them
+                for mac_entry in mac_entries:
                     port = lm.dot1dTpFdbPort[mac_entry]
                     if port == None:
                         logger.debug("fn=MacAPI/get_macs_from_device : %s : skip port=None" % (devicename))
@@ -630,6 +641,7 @@ class MacAPI(restful.Resource):
                     else:
                         macs[ifindex] = [mac_record]
 
+        logger.debug("returning data")
         return macs
 
 
