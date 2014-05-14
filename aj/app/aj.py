@@ -594,9 +594,14 @@ class MacAPI(restful.Resource):
 
         for entry in m.vtpVlanName:
             vlan_nr = entry[1]
-            vlan_type = m.vtpVlanType[entry]
-            vlan_state = m.vtpVlanState[entry]
-            vlan_name = m.vtpVlanName[entry]
+            try:
+                logger.debug('fn=MacAPI/get_macs_from_device vlan_nr = %s' % (vlan_nr))
+                vlan_type = m.vtpVlanType[entry]
+                vlan_state = m.vtpVlanState[entry]
+                vlan_name = m.vtpVlanName[entry]
+            except:
+                logger.warn("fn=MacAPI/get_macs_from_device : failed to get vlan detail infos. Skip to next vlan")
+                continue
 
             # only ethernet VLANs
             if vlan_type == 'ethernet' and vlan_state == 'operational':
@@ -604,42 +609,41 @@ class MacAPI(restful.Resource):
 
                 # VLAN-based community, have a local manager for each VLAN
                 vlan_community = "%s@%s" % (ro_community, vlan_nr)
-                lm = M(host=devicename, community=vlan_community, version=2, timeout=app.config['SNMP_TIMEOUT'], retries=app.config['SNMP_RETRIES'], none=True)
+                # can be slow for big switches, so try only once but longer
+                lm = M(host=devicename, community=vlan_community, version=2, timeout=app.config['SNMP_TIMEOUT_LONG'], retries=app.config['SNMP_RETRIES_NONE'], none=True)
 
                 # we pull them in an array so we can catch timeouts for broken IOS versions
                 # happened on a big stack of 8 Cisco 3750 running 12.2(46)SE (fc2)
-                # FIXME : this try/except never catches a SNMP timeout. Not sure why
                 try:
                     logger.debug('fn=MacAPI/get_macs_from_device : trying to pull all mac_entries for vlan %s (%s)' % (vlan_nr, vlan_name))
-                    mac_entries = lm.dot1dTpFdbAddress
-                except snmp.SNMPException, e:
-                    logger.warn("fn=MacAPI/get_macs_from_device : failed with %s, probably an unused VLAN on a buggy IOS producing SNMP timeout. Ignoring this VLAN" % (e))
-                    continue
+                    for mac_entry in lm.dot1dTpFdbAddress:
+                        port = lm.dot1dTpFdbPort[mac_entry]
+                        if port == None:
+                            logger.debug("fn=MacAPI/get_macs_from_device : %s : skip port=None" % (devicename))
+                            continue
 
-                # now we have some data for this VLAN, loop over them
-                for mac_entry in mac_entries:
-                    port = lm.dot1dTpFdbPort[mac_entry]
-                    if port == None:
-                        logger.debug("fn=MacAPI/get_macs_from_device : %s : skip port=None" % (devicename))
-                        continue
+                        try:
+                            ifindex = lm.dot1dBasePortIfIndex[port]
+                        except Exception, e:
+                            logger.debug("fn=MacAPI/get_macs_from_device : %s : port=%s, mac_entry_idx lookup failed : %s" % (devicename, port, e))
 
-                    try:
-                        ifindex = lm.dot1dBasePortIfIndex[port]
-                    except Exception, e:
-                        logger.debug("fn=MacAPI/get_macs_from_device : %s : port=%s, mac_entry_idx lookup failed : %s" % (devicename, port, e))
+                        try:
+                            mac = netaddr.EUI(mac_entry)
+                            vendor = mac.oui.registration().org
+                        except Exception, e:
+                            logger.info("fn=MacAPI/get_macs_from_device : %s : vendor lookup failed : %s" % (devicename, e))
+                            vendor = 'unknown'
 
-                    try:
-                        mac = netaddr.EUI(mac_entry)
-                        vendor = mac.oui.registration().org
-                    except Exception, e:
-                        logger.info("fn=MacAPI/get_macs_from_device : %s : vendor lookup failed : %s" % (devicename, e))
-                        vendor = 'unknown'
+                        mac_record = {'mac': str(mac), 'vendor': vendor}
+                        if ifindex in macs:
+                            macs[ifindex].append(mac_record)
+                        else:
+                            macs[ifindex] = [mac_record]
 
-                    mac_record = {'mac': str(mac), 'vendor': vendor}
-                    if ifindex in macs:
-                        macs[ifindex].append(mac_record)
-                    else:
-                        macs[ifindex] = [mac_record]
+#                except snmp.SNMPException, e:
+                except:
+                    logger.warn("fn=MacAPI/get_macs_from_device : failed, probably an unused VLAN (%s) on a buggy IOS producing SNMP timeout. Ignoring this VLAN" % (vlan_nr))
+                    #pass
 
         logger.debug("returning data")
         return macs

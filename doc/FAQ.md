@@ -39,4 +39,4 @@ However, I have found some gear vendors using MAC prefixes out of nowhere, unkno
 
 macs or showmac give timeouts with vlan-based community SNMP-get.
 
-I'm not yet sure about this case, it looks like it's an IOS bug. I'm trying to catch this case in get_macs_from_device() but without success so far.
+I'm not yet sure about this case, it looks like it's an IOS bug for stacked switches.

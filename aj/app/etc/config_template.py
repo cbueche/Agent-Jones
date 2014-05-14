@@ -35,6 +35,10 @@ class Config(object):
     SNMP_TIMEOUT = 2
     SNMP_RETRIES = 2
 
+    # timeout for VLAN-based SNMP get (used eg in getMAC())
+    SNMP_TIMEOUT_LONG = 30
+    SNMP_RETRIES_NONE = 0
+
 
 # values for prod
 class ProductionConfig(Config):
