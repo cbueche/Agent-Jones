@@ -932,7 +932,7 @@ class DeviceSshAPI(restful.Resource):
         "description": "PUT on a device : run commands over ssh",
         "auth": true,
         "auth-type": "BasicAuth",
-        "params": ["driver=ios", "CmdList=list (JSON, indexed by cmds)", "uuid=UUID (optional, used to identify the write request in logs)"],
+        "params": ["driver=ios", "CmdList=list (JSON ordered list)", "uuid=UUID (optional, used to identify the write request in logs)"],
         "returns": "status and output indexed by commands"
     }'''
     """ PUT on a device : run commands over ssh """
@@ -951,11 +951,12 @@ class DeviceSshAPI(restful.Resource):
         args = self.reqparse.parse_args()
         uuid = args['uuid']
         driver = args['driver']
+        logger.debug("fn=DeviceSshAPI/put : Received CmdList = <%s>" % (args['CmdList']))
         try:
-            cmdlist = loads(args['CmdList'])['cmds']
+            cmdlist = loads(args['CmdList'])
         except Exception, e:
-            logger.error("fn=DeviceSshAPI/put : %s : %s : device configuration failed : cmds list is no valid JSON" % (devicename, e))
-            return errst.status('ERROR_OP', 'device configuration failed : cmds list is no valid JSON : %s. Try with something like this without the backslashes : {"cmds": ["terminal length 0", "show users", "show version"]}' % e), 500
+            logger.error("fn=DeviceSshAPI/put : %s : %s : device configuration failed : cmds list is no valid JSON. Received CmdList = <%s>" % (devicename, e, args['CmdList']))
+            return errst.status('ERROR_OP', 'device configuration failed : cmds list is no valid JSON : %s. Try with something like this without the backslashes : ["terminal length 0", "show users", "show version"]' % e), 500
 
         logger.info('fn=DeviceSshAPI/put : %s : commands=%s, uuid=%s' % (devicename, cmdlist, uuid))
 
@@ -971,17 +972,17 @@ class DeviceSshAPI(restful.Resource):
         sys.stdin = save_stdin
 
         if status == 0:
-            logger.debug('fn=DeviceSshAPI/put : %s : status = %s, output global = %s' % (devicename, status, output_global))
+            logger.debug('fn=DeviceSshAPI/put : %s : status = %s, output_indexed=%s, output_global = %s' % (devicename, status, output_indexed, output_global))
         else:
-            logger.error('fn=DeviceSshAPI/put : %s : status = %s, output global = %s' % (devicename, status, output_global))
-            return errst.status('ERROR_OP', 'device commands by ssh failed : status=%s, output=%s' % (status, output_indexed)), 200
+            logger.error('fn=DeviceSshAPI/put : %s : status = %s, output_indexed=%s, output global = %s' % (devicename, status, output_indexed, output_global))
+            return errst.status('ERROR_OP', 'device commands by ssh failed : status=%s, output_indexed=%s, output_global=%s' % (status, output_indexed, output_global)), 200
 
         tend = datetime.now()
         tdiff = tend - tstart
         duration = (tdiff.microseconds + (tdiff.seconds + tdiff.days * 24 * 3600) * 10**6) / 1000
 
         logger.debug('fn=DeviceSshAPI/put : %s : device commands successful' % devicename)
-        return {'info': 'device commands successful', 'duration': duration, 'output': output_indexed}
+        return {'info': 'device commands successful', 'duration': duration, 'output_indexed': output_indexed}
 
 
 
