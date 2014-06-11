@@ -39,41 +39,41 @@ class SshCmd():
         '''
 
         # that's a bit dumb, python doesn't allow to import from a variable
-        if driver == 'aix': 
+        if driver == 'aix':
             from Exscript.protocols.drivers import aix
-        elif driver == 'arbor_peakflow': 
+        elif driver == 'arbor_peakflow':
             from Exscript.protocols.drivers import arbor_peakflow
-        elif driver == 'aruba': 
+        elif driver == 'aruba':
             from Exscript.protocols.drivers import aruba
-        elif driver == 'brocade': 
+        elif driver == 'brocade':
             from Exscript.protocols.drivers import brocade
-        elif driver == 'enterasys': 
+        elif driver == 'enterasys':
             from Exscript.protocols.drivers import enterasys
-        elif driver == 'generic': 
+        elif driver == 'generic':
             from Exscript.protocols.drivers import generic
-        elif driver == 'hp_pro_curve': 
+        elif driver == 'hp_pro_curve':
             from Exscript.protocols.drivers import hp_pro_curve
-        elif driver == 'ios': 
+        elif driver == 'ios':
             from Exscript.protocols.drivers import ios
-        elif driver == 'ios_xr': 
+        elif driver == 'ios_xr':
             from Exscript.protocols.drivers import ios_xr
-        elif driver == 'junos': 
+        elif driver == 'junos':
             from Exscript.protocols.drivers import junos
-        elif driver == 'junos_erx': 
+        elif driver == 'junos_erx':
             from Exscript.protocols.drivers import junos_erx
-        elif driver == 'one_os': 
+        elif driver == 'one_os':
             from Exscript.protocols.drivers import one_os
-        elif driver == 'shell': 
+        elif driver == 'shell':
             from Exscript.protocols.drivers import shell
-        elif driver == 'smart_edge_os': 
+        elif driver == 'smart_edge_os':
             from Exscript.protocols.drivers import smart_edge_os
-        elif driver == 'sros': 
+        elif driver == 'sros':
             from Exscript.protocols.drivers import sros
-        elif driver == 'vrp': 
+        elif driver == 'vrp':
             from Exscript.protocols.drivers import vrp
         else:
             return (2, 'invalid driver, please check list from http://knipknap.github.io/exscript/api/Exscript.protocols.drivers-module.html', [])
- 
+
         output_global = ''
         output_indexed = []
         try:
@@ -87,10 +87,12 @@ class SshCmd():
                 output_global = output_global + conn.response
                 output_indexed.append({command: conn.response})
 
-            conn.send('exit')
-            conn.close()
-
         except Exception, e:
             return (1, e, output_indexed)
+
+        # sometimes sending "exit" produce a close before we can explicitely do it ourselves
+        # so take those two commands out of the try/except block and ignore their failures
+        conn.send('exit')
+        conn.close()
 
         return (0, output_global, output_indexed)

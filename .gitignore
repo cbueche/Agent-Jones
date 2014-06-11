@@ -7,3 +7,4 @@ aj/share
 WARNING_github_public.txt
 aj/app/etc/credentials.py
 aj/app/etc/config.py
+aj/app/etc/credentials_msp.py
