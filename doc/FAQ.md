@@ -39,4 +39,9 @@ However, I have found some gear vendors using MAC prefixes out of nowhere, unkno
 
 macs or showmac give timeouts with vlan-based community SNMP-get.
 
-I'm not yet sure about this case, it looks like it's an IOS bug for stacked switches.
+I'm not yet sure about this case, it looks like it's an IOS bug for stacked switches, or very slow and big Cisco stacks. I have added a distinct timeout for those operations.
+
+
+duplicated macs on switch ports
+
+Caused by Avaya phones. See the Release notes and install the latest version, it shows the VLAN for which each MAC is seen.

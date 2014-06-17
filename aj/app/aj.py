@@ -631,10 +631,11 @@ class MacAPI(restful.Resource):
                             mac = netaddr.EUI(mac_entry)
                             vendor = mac.oui.registration().org
                         except Exception, e:
-                            logger.info("fn=MacAPI/get_macs_from_device : %s : vendor lookup failed : %s" % (devicename, e))
+                            #logger.info("fn=MacAPI/get_macs_from_device : %s : vendor lookup failed : %s" % (devicename, e))
                             vendor = 'unknown'
 
-                        mac_record = {'mac': str(mac), 'vendor': vendor}
+                        #logger.debug("STORAGE: idx=%s, vlan=%s, mac=%s, vendor=%s" % (ifindex, vlan_nr, str(mac), vendor))
+                        mac_record = {'mac': str(mac), 'vendor': vendor, 'vlan': vlan_nr}
                         if ifindex in macs:
                             macs[ifindex].append(mac_record)
                         else:

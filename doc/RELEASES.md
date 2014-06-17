@@ -2,6 +2,12 @@ Release notes
 =============
 
 
+17.6.2014
+---------
+
+- add vlan of MAC entries, so duplicates MACs for ports are identifiable. Case happens (at least) with Avaya phones when connected to a dual-VLAN (data & voice) access port.
+
+
 28.4.2014
 ---------
 
