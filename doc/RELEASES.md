@@ -2,6 +2,13 @@ Release notes
 =============
 
 
+18.6.2014
+---------
+
+- if asking POE info from a switch without POE, return 0/null values instead of "End of MIB was reached".
+- interfaces call now shows the Voice VLAN-id (name name if asked so with showvlannames=1)
+
+
 17.6.2014
 ---------
 

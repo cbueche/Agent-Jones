@@ -21,6 +21,7 @@ Features
 - Save the running-config to startup-config.
 - Assign a port to a VLAN.
 - Get the vlan list from a device (currently only native vlans).
+- Get the voice-vlan for an interface.
 - GET interfaces from a device. Option to list the MAC addresses of devices connected to each port.
 - Configure an interface : adminStatus and ifAlias (called description in Cisco language).
 - List the connected MAC addresses : MAC(ethernet) to port mappings from a device.

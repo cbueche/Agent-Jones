@@ -372,8 +372,11 @@ class InterfaceAPI(restful.Resource):
                 macAPI = MacAPI()
                 macs = macAPI.get_macs_from_device(devicename, m, ro_community)
 
+            # collect the voice vlans
+            vlanAPI = vlanlistAPI()
+            voice_vlans = vlanAPI.get_voice_vlans(devicename, m, ro_community)
+
             if showvlannames:
-                vlanAPI = vlanlistAPI()
                 vlans = vlanAPI.get_vlans(devicename, m, ro_community)
 
             if showpoe:
@@ -393,21 +396,38 @@ class InterfaceAPI(restful.Resource):
                 interface['ifDescr']                                       = str(m.ifDescr[index])
                 interface['ifAlias']                                       = str(m.ifAlias[index])
                 interface['dot3StatsDuplexStatus']                         = str(m.dot3StatsDuplexStatus[index])
-                vlan_nr = m.vmVlan[index]
 
+                # try to get vlan numbers (data and voice)
+                vlan_nr = m.vmVlan[index]
+                if index in voice_vlans:
+                    voice_vlan_nr = int(voice_vlans[index])
+                else:
+                    voice_vlan_nr = None
+
+                # get vlan names if asked so
                 if showvlannames:
+                    # data
                     if vlan_nr in vlans:
                         vlan_name = vlans[vlan_nr]['name']
                     else:
                         vlan_name = ''
-                    # lookup table for VLAN names
-                    interface['vmVlanNative']                                  = {'nr': vlan_nr, 'name': vlan_name}
-                else:
-                    interface['vmVlanNative']                                  = {'nr': vlan_nr, 'name': ''}
+                    # voice
+                    if voice_vlan_nr in vlans:
+                        voice_vlan_name = vlans[voice_vlan_nr]['name']
+                    else:
+                        voice_vlan_name = ''
 
+                else:
+                    vlan_name = ''
+                    voice_vlan_name = ''
+
+                interface['vmVlanNative'] = {'nr': vlan_nr, 'name': vlan_name}
+                interface['vmVoiceVlanId'] = {'nr': voice_vlan_nr, 'name': voice_vlan_name}
+
+                # Macs
                 if showmac:
                     if index in macs:
-                        interface['macs']                                      = macs[index]
+                        interface['macs'] = macs[index]
                     else:
                         interface['macs'] = []
 
@@ -417,7 +437,7 @@ class InterfaceAPI(restful.Resource):
                         interface['poePower'] = poe[interface['ifDescr']]['power']
                     else:
                         interface['poeStatus'] = ''
-                        interface['poePower'] = 0
+                        interface['poePower'] = None
 
                 interfaces.append(interface)
 
@@ -445,20 +465,29 @@ class InterfaceAPI(restful.Resource):
             return a list of poe entries, indexed by port name (eg FastEthernet1/0/15)
         '''
         # first, create a mapping EntPhyIndex --> port name (eg FastEthernet1/0/6), as we don't have the if-idx in POE table below
+        logger.debug('fn=InterfaceAPI/get_poe : %s : create a mapping EntPhyIndex --> port name' % (devicename))
         port_mapping = {}
         for entry in m.entPhysicalName:
             port_mapping[entry] = m.entPhysicalName[entry]
             logger.debug('fn=InterfaceAPI/get_poe : %s : ent-idx=%s, port-name=%s' % (devicename, entry, port_mapping[entry]))
 
         # then, get the poe info. Returned entries are indexed by the port-name
+        logger.debug('fn=InterfaceAPI/get_poe : %s : get poe info' % (devicename))
         poe = {}
-        for entry in m.cpeExtPsePortPwrConsumption:
-            entry_status = m.pethPsePortDetectionStatus[entry]
-            entry_power  = m.cpeExtPsePortPwrConsumption[entry]
-            entry_idx    = m.cpeExtPsePortEntPhyIndex[entry]
-            entry_port_name = port_mapping[entry_idx]
-            logger.debug('fn=InterfaceAPI/get_poe : %s : status=%s, power=%s, ent-idx=%s, port-name=%s' % (devicename, entry_status, entry_power, entry_idx, entry_port_name))
-            poe[entry_port_name] = {'status': entry_status, 'power': entry_power}
+        # some switches cannot do any POE and answer with "End of MIB was reached"
+        # and some clients might ask for POE for those even if the get-device API call
+        # said "no POE". In this case, only log and return an empty table
+        try:
+            for entry in m.cpeExtPsePortPwrConsumption:
+                entry_status = m.pethPsePortDetectionStatus[entry]
+                entry_power  = m.cpeExtPsePortPwrConsumption[entry]
+                entry_idx    = m.cpeExtPsePortEntPhyIndex[entry]
+                entry_port_name = port_mapping[entry_idx]
+                logger.debug('fn=InterfaceAPI/get_poe : %s : status=%s, power=%s, ent-idx=%s, port-name=%s' % (devicename, entry_status, entry_power, entry_idx, entry_port_name))
+                poe[entry_port_name] = {'status': entry_status, 'power': entry_power}
+
+        except Exception, e:
+            logger.debug("fn=InterfaceAPI/get_poe : %s : could not get poe info, probably a device without POE. Status : %s" % (devicename, e))
 
         return poe
 
@@ -641,7 +670,6 @@ class MacAPI(restful.Resource):
                         else:
                             macs[ifindex] = [mac_record]
 
-#                except snmp.SNMPException, e:
                 except:
                     logger.warn("fn=MacAPI/get_macs_from_device : failed, probably an unused VLAN (%s) on a buggy IOS producing SNMP timeout. Ignoring this VLAN" % (vlan_nr))
                     #pass
@@ -726,6 +754,18 @@ class vlanlistAPI(restful.Resource):
             vlans[entry[1]] = vlan
 
         return vlans
+
+
+    def get_voice_vlans(self, devicename, m, ro_community):
+        ''' return a VOICE_VLAN dict indexed by vlan-nr '''
+
+        logger.debug('fn=vlanlistAPI/get_voice_vlans : %s : get voice vlan list' % devicename)
+        voice_vlans = {}
+        for index in m.vmVoiceVlanId:
+            logger.debug('fn=vlanlistAPI/get_voice_vlans : %s : get voice vlan info for index %s' % (devicename, index))
+            voice_vlans[index] = str(m.vmVoiceVlanId[index])
+
+        return voice_vlans
 
 
 
