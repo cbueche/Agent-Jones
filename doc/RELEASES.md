@@ -2,6 +2,25 @@ Release notes
 =============
 
 
+18.6.2014
+---------
+
+- if asking POE info from a switch without POE, return 0/null values instead of "End of MIB was reached".
+- interfaces call now shows the Voice VLAN-id (and name if asked so with showvlannames=1)
+
+
+17.6.2014
+---------
+
+- add vlan of MAC entries, so duplicates MACs for ports are identifiable. Case happens (at least) with Avaya phones when connected to a dual-VLAN (data & voice) access port.
+
+
+28.4.2014
+---------
+
+- avoid issue with unexistant ports returned by dot1dBasePortIfIndex. It was producing exceptions when using showmac=1 on Cisco C2960S and possibly other models as well.
+
+
 24.3.2014
 ---------
 

@@ -56,7 +56,7 @@ from snimpy import snmp
 
 mib_path = script_path + '/mibs/'
 
-# RTF FAQ 
+# RTF FAQ
 os.environ['SMIPATH'] = mib_path
 
 # base MIBs that everyone uses at some point
@@ -125,8 +125,8 @@ class DocCollection():
 # -----------------------------------------------------------------------------------
 class DeviceAPI(restful.Resource):
     __doc__ = '''{
-        "name": "DeviceAPI", 
-        "description": "GET info from a single device.", 
+        "name": "DeviceAPI",
+        "description": "GET info from a single device.",
         "auth": true,
         "auth-type": "BasicAuth",
         "params": [],
@@ -211,7 +211,7 @@ class DeviceAPI(restful.Resource):
         for i in m.entPhysicalContainedIn:
             if m.entPhysicalContainedIn[i] == parent_search_stop_at:
                 parent = i
-                hardware_info.append({  
+                hardware_info.append({
                     'physicalDescr':        m.entPhysicalDescr[parent],
                     'physicalHardwareRev':  m.entPhysicalHardwareRev[parent],
                     'physicalFirmwareRev':  m.entPhysicalFirmwareRev[parent],
@@ -233,8 +233,8 @@ class DeviceAPI(restful.Resource):
 class DeviceSaveAPI(restful.Resource):
     '''
     {
-        "name": "DeviceSaveAPI", 
-        "description": "save the running-config to startup-config", 
+        "name": "DeviceSaveAPI",
+        "description": "save the running-config to startup-config",
         "auth": true,
         "auth-type": "BasicAuth",
         "params": ["uuid=UUID (optional, used to identify the write request in logs)"],
@@ -259,7 +259,7 @@ class DeviceSaveAPI(restful.Resource):
         tstart = datetime.now()
 
         rw_community = credmgr.get_credentials(devicename)['rw_community']
-      
+
         if not check.check_snmp(logger, M, devicename, rw_community, 'RW'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
@@ -332,7 +332,7 @@ class DeviceSaveAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 class InterfaceAPI(restful.Resource):
     __doc__ = '''{
-        "name": "InterfaceAPI", 
+        "name": "InterfaceAPI",
         "description": "GET interfaces from a device. Adding ?showmac=1 to the URI will list the MAC addresses of devices connected to ports. Be aware that it makes the query much slower. Adding ?showvlannames=1 will show the vlan names for each vlan. It will as well make the query slower. Adding ?showpoe=1 will provide the power consumption for each port. Again, it will make the query slower",
         "auth": true,
         "auth-type": "BasicAuth",
@@ -372,8 +372,11 @@ class InterfaceAPI(restful.Resource):
                 macAPI = MacAPI()
                 macs = macAPI.get_macs_from_device(devicename, m, ro_community)
 
+            # collect the voice vlans
+            vlanAPI = vlanlistAPI()
+            voice_vlans = vlanAPI.get_voice_vlans(devicename, m, ro_community)
+
             if showvlannames:
-                vlanAPI = vlanlistAPI()
                 vlans = vlanAPI.get_vlans(devicename, m, ro_community)
 
             if showpoe:
@@ -393,21 +396,38 @@ class InterfaceAPI(restful.Resource):
                 interface['ifDescr']                                       = str(m.ifDescr[index])
                 interface['ifAlias']                                       = str(m.ifAlias[index])
                 interface['dot3StatsDuplexStatus']                         = str(m.dot3StatsDuplexStatus[index])
-                vlan_nr = m.vmVlan[index]
 
+                # try to get vlan numbers (data and voice)
+                vlan_nr = m.vmVlan[index]
+                if index in voice_vlans:
+                    voice_vlan_nr = int(voice_vlans[index])
+                else:
+                    voice_vlan_nr = None
+
+                # get vlan names if asked so
                 if showvlannames:
+                    # data
                     if vlan_nr in vlans:
                         vlan_name = vlans[vlan_nr]['name']
                     else:
                         vlan_name = ''
-                    # lookup table for VLAN names
-                    interface['vmVlanNative']                                  = {'nr': vlan_nr, 'name': vlan_name}
-                else:
-                    interface['vmVlanNative']                                  = {'nr': vlan_nr, 'name': ''}
+                    # voice
+                    if voice_vlan_nr in vlans:
+                        voice_vlan_name = vlans[voice_vlan_nr]['name']
+                    else:
+                        voice_vlan_name = ''
 
+                else:
+                    vlan_name = ''
+                    voice_vlan_name = ''
+
+                interface['vmVlanNative'] = {'nr': vlan_nr, 'name': vlan_name}
+                interface['vmVoiceVlanId'] = {'nr': voice_vlan_nr, 'name': voice_vlan_name}
+
+                # Macs
                 if showmac:
                     if index in macs:
-                        interface['macs']                                      = macs[index]
+                        interface['macs'] = macs[index]
                     else:
                         interface['macs'] = []
 
@@ -417,7 +437,7 @@ class InterfaceAPI(restful.Resource):
                         interface['poePower'] = poe[interface['ifDescr']]['power']
                     else:
                         interface['poeStatus'] = ''
-                        interface['poePower'] = 0
+                        interface['poePower'] = None
 
                 interfaces.append(interface)
 
@@ -445,20 +465,29 @@ class InterfaceAPI(restful.Resource):
             return a list of poe entries, indexed by port name (eg FastEthernet1/0/15)
         '''
         # first, create a mapping EntPhyIndex --> port name (eg FastEthernet1/0/6), as we don't have the if-idx in POE table below
+        logger.debug('fn=InterfaceAPI/get_poe : %s : create a mapping EntPhyIndex --> port name' % (devicename))
         port_mapping = {}
         for entry in m.entPhysicalName:
             port_mapping[entry] = m.entPhysicalName[entry]
             logger.debug('fn=InterfaceAPI/get_poe : %s : ent-idx=%s, port-name=%s' % (devicename, entry, port_mapping[entry]))
 
         # then, get the poe info. Returned entries are indexed by the port-name
+        logger.debug('fn=InterfaceAPI/get_poe : %s : get poe info' % (devicename))
         poe = {}
-        for entry in m.cpeExtPsePortPwrConsumption:
-            entry_status = m.pethPsePortDetectionStatus[entry]
-            entry_power  = m.cpeExtPsePortPwrConsumption[entry]
-            entry_idx    = m.cpeExtPsePortEntPhyIndex[entry]
-            entry_port_name = port_mapping[entry_idx]
-            logger.debug('fn=InterfaceAPI/get_poe : %s : status=%s, power=%s, ent-idx=%s, port-name=%s' % (devicename, entry_status, entry_power, entry_idx, entry_port_name))
-            poe[entry_port_name] = {'status': entry_status, 'power': entry_power}
+        # some switches cannot do any POE and answer with "End of MIB was reached"
+        # and some clients might ask for POE for those even if the get-device API call
+        # said "no POE". In this case, only log and return an empty table
+        try:
+            for entry in m.cpeExtPsePortPwrConsumption:
+                entry_status = m.pethPsePortDetectionStatus[entry]
+                entry_power  = m.cpeExtPsePortPwrConsumption[entry]
+                entry_idx    = m.cpeExtPsePortEntPhyIndex[entry]
+                entry_port_name = port_mapping[entry_idx]
+                logger.debug('fn=InterfaceAPI/get_poe : %s : status=%s, power=%s, ent-idx=%s, port-name=%s' % (devicename, entry_status, entry_power, entry_idx, entry_port_name))
+                poe[entry_port_name] = {'status': entry_status, 'power': entry_power}
+
+        except Exception, e:
+            logger.debug("fn=InterfaceAPI/get_poe : %s : could not get poe info, probably a device without POE. Status : %s" % (devicename, e))
 
         return poe
 
@@ -468,12 +497,12 @@ class InterfaceAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 class InterfaceCounterAPI(restful.Resource):
     __doc__ = '''{
-        "name": "InterfaceCounterAPI", 
-        "description": "GET interface counters of one interface", 
+        "name": "InterfaceCounterAPI",
+        "description": "GET interface counters of one interface",
         "auth": true,
         "auth-type": "BasicAuth",
         "params": [],
-        "returns": "A list of interfaces counters."
+        "returns": "A list of interfaces counters. Use inOctets and outOctets to get an octet counter independent of 64 bit (ifX HC) capabilities of the target."
     }'''
     decorators = [auth.login_required]
 
@@ -501,10 +530,18 @@ class InterfaceCounterAPI(restful.Resource):
 
             logger.debug('fn=InterfaceCounterAPI/get : %s : get interface counters' % devicename)
             counters = {}
-            counters['ifHCInOctets'] = m.ifHCInOctets[ifindex]
+            counters['ifHCInOctets']  = m.ifHCInOctets[ifindex]
             counters['ifHCOutOctets'] = m.ifHCOutOctets[ifindex]
-            counters['ifInErrors'] = m.ifInErrors[ifindex]
-            counters['ifOutErrors'] = m.ifOutErrors[ifindex]
+            counters['ifInErrors']    = m.ifInErrors[ifindex]
+            counters['ifOutErrors']   = m.ifOutErrors[ifindex]
+
+            if counters['ifHCInOctets'] and counters['ifHCInOctets']:
+                counters['inOctets']  = counters['ifHCInOctets']
+                counters['outOctets'] = counters['ifHCOutOctets']
+            else:
+                counters['inOctets']  = m.ifInOctets[ifindex]
+                counters['outOctets'] = m.ifOutOctets[ifindex]
+
             deviceinfo['counters'] = counters
 
         except Exception, e:
@@ -526,8 +563,8 @@ class InterfaceCounterAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 class MacAPI(restful.Resource):
     __doc__ = '''{
-        "name": "MacAPI", 
-        "description": "MAC(ethernet) to port mappings from a device", 
+        "name": "MacAPI",
+        "description": "MAC(ethernet) to port mappings from a device",
         "auth": true,
         "auth-type": "BasicAuth",
         "params": [],
@@ -563,7 +600,7 @@ class MacAPI(restful.Resource):
                 entry["macs"] = macs[ifindex]
                 macs_organized.append(entry)
 
-        except Exception, e:
+        except snmp.SNMPException, e:
             logger.error("fn=MacAPI/get : %s : SNMP get failed : %s" % (devicename, e))
             return errst.status('ERROR_OP', 'SNMP get failed on %s, cause : %s' % (devicename, e)), 200
 
@@ -586,9 +623,14 @@ class MacAPI(restful.Resource):
 
         for entry in m.vtpVlanName:
             vlan_nr = entry[1]
-            vlan_type = m.vtpVlanType[entry]
-            vlan_state = m.vtpVlanState[entry]
-            vlan_name = m.vtpVlanName[entry]
+            try:
+                logger.debug('fn=MacAPI/get_macs_from_device vlan_nr = %s' % (vlan_nr))
+                vlan_type = m.vtpVlanType[entry]
+                vlan_state = m.vtpVlanState[entry]
+                vlan_name = m.vtpVlanName[entry]
+            except:
+                logger.warn("fn=MacAPI/get_macs_from_device : failed to get vlan detail infos. Skip to next vlan")
+                continue
 
             # only ethernet VLANs
             if vlan_type == 'ethernet' and vlan_state == 'operational':
@@ -596,27 +638,43 @@ class MacAPI(restful.Resource):
 
                 # VLAN-based community, have a local manager for each VLAN
                 vlan_community = "%s@%s" % (ro_community, vlan_nr)
-                lm = M(host=devicename, community=vlan_community, version=2, timeout=app.config['SNMP_TIMEOUT'], retries=app.config['SNMP_RETRIES'], none=True)
+                # can be slow for big switches, so try only once but longer
+                lm = M(host=devicename, community=vlan_community, version=2, timeout=app.config['SNMP_TIMEOUT_LONG'], retries=app.config['SNMP_RETRIES_NONE'], none=True)
 
-                for mac_entry in lm.dot1dTpFdbAddress:
-                    port = lm.dot1dTpFdbPort[mac_entry]
-                    ifindex = lm.dot1dBasePortIfIndex[port]
+                # we pull them in an array so we can catch timeouts for broken IOS versions
+                # happened on a big stack of 8 Cisco 3750 running 12.2(46)SE (fc2)
+                try:
+                    logger.debug('fn=MacAPI/get_macs_from_device : trying to pull all mac_entries for vlan %s (%s)' % (vlan_nr, vlan_name))
+                    for mac_entry in lm.dot1dTpFdbAddress:
+                        port = lm.dot1dTpFdbPort[mac_entry]
+                        if port == None:
+                            logger.debug("fn=MacAPI/get_macs_from_device : %s : skip port=None" % (devicename))
+                            continue
 
-                    # lookup vendor from OUI database
-                    mac = netaddr.EUI(mac_entry)
-                    # some vendors are not in
-                    try:
-                        vendor = mac.oui.registration().org
-                    except Exception, e:
-                        logger.info("fn=MacAPI/get_macs_from_device : %s : vendor lookup failed : %s" % (devicename, e))
-                        vendor = 'unknown'
+                        try:
+                            ifindex = lm.dot1dBasePortIfIndex[port]
+                        except Exception, e:
+                            logger.debug("fn=MacAPI/get_macs_from_device : %s : port=%s, mac_entry_idx lookup failed : %s" % (devicename, port, e))
 
-                    mac_record = {'mac': str(mac), 'vendor': vendor}
-                    if ifindex in macs:
-                        macs[ifindex].append(mac_record)
-                    else:
-                        macs[ifindex] = [mac_record]
+                        try:
+                            mac = netaddr.EUI(mac_entry)
+                            vendor = mac.oui.registration().org
+                        except Exception, e:
+                            #logger.info("fn=MacAPI/get_macs_from_device : %s : vendor lookup failed : %s" % (devicename, e))
+                            vendor = 'unknown'
 
+                        #logger.debug("STORAGE: idx=%s, vlan=%s, mac=%s, vendor=%s" % (ifindex, vlan_nr, str(mac), vendor))
+                        mac_record = {'mac': str(mac), 'vendor': vendor, 'vlan': vlan_nr}
+                        if ifindex in macs:
+                            macs[ifindex].append(mac_record)
+                        else:
+                            macs[ifindex] = [mac_record]
+
+                except:
+                    logger.warn("fn=MacAPI/get_macs_from_device : failed, probably an unused VLAN (%s) on a buggy IOS producing SNMP timeout. Ignoring this VLAN" % (vlan_nr))
+                    #pass
+
+        logger.debug("returning data")
         return macs
 
 
@@ -626,8 +684,8 @@ class MacAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 class vlanlistAPI(restful.Resource):
     __doc__ = '''{
-        "name": "vlanlistAPI", 
-        "description": "GET vlan list from a device", 
+        "name": "vlanlistAPI",
+        "description": "GET vlan list from a device",
         "auth": true,
         "auth-type": "BasicAuth",
         "params": [],
@@ -698,6 +756,18 @@ class vlanlistAPI(restful.Resource):
         return vlans
 
 
+    def get_voice_vlans(self, devicename, m, ro_community):
+        ''' return a VOICE_VLAN dict indexed by vlan-nr '''
+
+        logger.debug('fn=vlanlistAPI/get_voice_vlans : %s : get voice vlan list' % devicename)
+        voice_vlans = {}
+        for index in m.vmVoiceVlanId:
+            logger.debug('fn=vlanlistAPI/get_voice_vlans : %s : get voice vlan info for index %s' % (devicename, index))
+            voice_vlans[index] = str(m.vmVoiceVlanId[index])
+
+        return voice_vlans
+
+
 
 # -----------------------------------------------------------------------------------
 # PUT on a vlan : assign the port to a VLAN
@@ -705,8 +775,8 @@ class vlanlistAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 class PortToVlanAPI(restful.Resource):
     __doc__ = '''{
-        "name": "PortToVlanAPI", 
-        "description": "PUT on a vlan : assign the port to a VLAN", 
+        "name": "PortToVlanAPI",
+        "description": "PUT on a vlan : assign the port to a VLAN",
         "auth": true,
         "auth-type": "BasicAuth",
         "params": ["vlan=NNN", "uuid=UUID (optional, used to identify the write request in logs)"],
@@ -730,7 +800,7 @@ class PortToVlanAPI(restful.Resource):
         logger.info('fn=PortToVlanAPI/put : %s : ifindex=%s, vlan=%s, uuid=%s' % (devicename, ifindex, vlan, uuid))
 
         tstart = datetime.now()
-      
+
         rw_community = credmgr.get_credentials(devicename)['rw_community']
         if not check.check_snmp(logger, M, devicename, rw_community, 'RW'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
@@ -765,8 +835,8 @@ class PortToVlanAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 class InterfaceConfigAPI(restful.Resource):
     __doc__ = '''{
-        "name": "InterfaceConfigAPI", 
-        "description": "PUT on an interface : configure the interface", 
+        "name": "InterfaceConfigAPI",
+        "description": "PUT on an interface : configure the interface",
         "auth": true,
         "auth-type": "BasicAuth",
         "params": ["ifAlias=TXT", "ifAdminStatus={1(up)|2(down)}", "uuid=UUID (optional, used to identify the write request in logs)"],
@@ -793,7 +863,7 @@ class InterfaceConfigAPI(restful.Resource):
         logger.info('fn=InterfaceConfigAPI/put : %s : ifindex=%s, ifAdminStatus=%s, ifAlias=%s, uuid=%s' % (devicename, ifindex, ifAdminStatus, ifAlias, uuid))
 
         tstart = datetime.now()
-      
+
         rw_community = credmgr.get_credentials(devicename)['rw_community']
         if not check.check_snmp(logger, M, devicename, rw_community, 'RW'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
@@ -829,8 +899,8 @@ class InterfaceConfigAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 class OIDpumpAPI(restful.Resource):
     __doc__ = '''{
-        "name": "OIDpumpAPI", 
-        "description": "SNMP get or walk on a OID. This is not completely tested, and walk tend to give back too much data. get can be used but usually needs a .0 at the end of the OID, so the URI to get sysUptime would be `/aj/api/v1/oidpump/devicename/get/1.3.6.1.2.1.1.3.0`, while the URI to walk ifName would be `/aj/api/v1/oidpump/devicename/walk/1.3.6.1.2.1.31.1.1.1.1`", 
+        "name": "OIDpumpAPI",
+        "description": "SNMP get or walk on a OID. This is not completely tested, and walk tend to give back too much data. get can be used but usually needs a .0 at the end of the OID, so the URI to get sysUptime would be `/aj/api/v1/oidpump/devicename/get/1.3.6.1.2.1.1.3.0`, while the URI to walk ifName would be `/aj/api/v1/oidpump/devicename/walk/1.3.6.1.2.1.31.1.1.1.1`",
         "auth": true,
         "auth-type": "BasicAuth",
         "params": [],
@@ -899,11 +969,11 @@ class OIDpumpAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 class DeviceSshAPI(restful.Resource):
     __doc__ = '''{
-        "name": "DeviceSshAPI", 
-        "description": "PUT on a device : run commands over ssh", 
+        "name": "DeviceSshAPI",
+        "description": "PUT on a device : run commands over ssh",
         "auth": true,
         "auth-type": "BasicAuth",
-        "params": ["driver=ios", "CmdList=list (JSON, indexed by cmds)", "uuid=UUID (optional, used to identify the write request in logs)"],
+        "params": ["driver=ios", "CmdList=list (JSON ordered list)", "uuid=UUID (optional, used to identify the write request in logs)"],
         "returns": "status and output indexed by commands"
     }'''
     """ PUT on a device : run commands over ssh """
@@ -922,11 +992,12 @@ class DeviceSshAPI(restful.Resource):
         args = self.reqparse.parse_args()
         uuid = args['uuid']
         driver = args['driver']
+        logger.debug("fn=DeviceSshAPI/put : Received CmdList = <%s>" % (args['CmdList']))
         try:
-            cmdlist = loads(args['CmdList'])['cmds']
+            cmdlist = loads(args['CmdList'])
         except Exception, e:
-            logger.error("fn=DeviceSshAPI/put : %s : %s : device configuration failed : cmds list is no valid JSON" % (devicename, e))
-            return errst.status('ERROR_OP', 'device configuration failed : cmds list is no valid JSON : %s. Try with something like this without the backslashes : {"cmds": ["terminal length 0", "show users", "show version"]}' % e), 500
+            logger.error("fn=DeviceSshAPI/put : %s : %s : device configuration failed : cmds list is no valid JSON. Received CmdList = <%s>" % (devicename, e, args['CmdList']))
+            return errst.status('ERROR_OP', 'device configuration failed : cmds list is no valid JSON : %s. Try with something like this without the backslashes : ["terminal length 0", "show users", "show version"]' % e), 500
 
         logger.info('fn=DeviceSshAPI/put : %s : commands=%s, uuid=%s' % (devicename, cmdlist, uuid))
 
@@ -942,17 +1013,17 @@ class DeviceSshAPI(restful.Resource):
         sys.stdin = save_stdin
 
         if status == 0:
-            logger.debug('fn=DeviceSshAPI/put : %s : status = %s, output global = %s' % (devicename, status, output_global))
+            logger.debug('fn=DeviceSshAPI/put : %s : status = %s, output_indexed=%s, output_global = %s' % (devicename, status, output_indexed, output_global))
         else:
-            logger.error('fn=DeviceSshAPI/put : %s : status = %s, output global = %s' % (devicename, status, output_global))
-            return errst.status('ERROR_OP', 'device commands by ssh failed : status=%s, output=%s' % (status, output_indexed)), 200
+            logger.error('fn=DeviceSshAPI/put : %s : status = %s, output_indexed=%s, output global = %s' % (devicename, status, output_indexed, output_global))
+            return errst.status('ERROR_OP', 'device commands by ssh failed : status=%s, output_indexed=%s, output_global=%s' % (status, output_indexed, output_global)), 200
 
         tend = datetime.now()
         tdiff = tend - tstart
         duration = (tdiff.microseconds + (tdiff.seconds + tdiff.days * 24 * 3600) * 10**6) / 1000
 
         logger.debug('fn=DeviceSshAPI/put : %s : device commands successful' % devicename)
-        return {'info': 'device commands successful', 'duration': duration, 'output': output_indexed}
+        return {'info': 'device commands successful', 'duration': duration, 'output_indexed': output_indexed}
 
 
 
@@ -1100,7 +1171,7 @@ def get_password(username):
     if username == app.config['BASIC_AUTH_USER']:
         return app.config['BASIC_AUTH_PASSWORD']
     return None
- 
+
 @auth.error_handler
 def unauthorized():
     logger.debug('not authorized')
@@ -1136,4 +1207,3 @@ if True:
         logger.info('AJ start')
         app.run(host='0.0.0.0', debug=True)
         logger.info('AJ end')
-

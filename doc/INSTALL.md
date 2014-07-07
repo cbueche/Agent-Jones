@@ -26,7 +26,7 @@ OS X: run this before "pip":
 
 Ubuntu: this might not be strictly needed anymore, but I have no fresh system to test. It was needed before I added all needed MIBs. YMMV.
 
-    sudo apt-get install python-dev smistrip tmux traceroute unzip libsmi2-dev libffi-dev snmp-mibs-downloader
+    sudo apt-get install libapache2-mod-wsgi python-virtualenv build-essential python-dev libffi-dev libsmi2-dev git snmp-mibs-downloader
 
 
 

@@ -21,6 +21,7 @@ Features
 - Save the running-config to startup-config.
 - Assign a port to a VLAN.
 - Get the vlan list from a device (currently only native vlans).
+- Get the voice-vlan for an interface.
 - GET interfaces from a device. Option to list the MAC addresses of devices connected to each port.
 - Configure an interface : adminStatus and ifAlias (called description in Cisco language).
 - List the connected MAC addresses : MAC(ethernet) to port mappings from a device.
@@ -73,13 +74,13 @@ Using the web-service is as easy as any such web-service. This is an example wit
 
 Using ssh commands is a bit more complicated. You have to provide 3 parameters to a PUT request:
 
-- CmdList : {"cmds": ["terminal length 0", "show users", "show version”]}
+- CmdList : ["terminal length 0", "show users", "show version”]
 - uuid as usual
 - driver : ios
 
 A corresponding curl command would be something like:
 
-    curl -X PUT -H Authorization:Basic FIXME -H Content-Type:multipart/form-data; -F CmdList={"cmds": ["terminal length 0", "show users", "show version"]} -F uuid=345abc -F driver=ios http://0.0.0.0:5000/aj/api/v1/device/ssh/switch1.domain.com
+    curl -X PUT -H Authorization:Basic FIXME -H Content-Type:multipart/form-data; -F CmdList={["terminal length 0", "show users", "show version"]} -F uuid=345abc -F driver=ios http://0.0.0.0:5000/aj/api/v1/device/ssh/switch1.domain.com
 
 If you expect any long output, you need to pass “terminal length 0” as first command. In fact, I would recommend to always pass it.
 
@@ -135,3 +136,4 @@ Credits
 
 - [Connectis AG, Bern](http://www.connectis.ch)
 - [Vincent Bernat](http://vincent.bernat.im/en/)
+- [Christian Ramseyer](http://www.netnea.com/cms/netnea-the-team/christian-ramseyer/)
