@@ -99,6 +99,10 @@ load(mib_path + "EtherLike-MIB.my")
 load(mib_path + "POWER-ETHERNET-MIB.my")
 load(mib_path + "CISCO-POWER-ETHERNET-EXT-MIB.my")
 
+# CDP / Cisco Discovery Protocol
+load(mib_path + "CISCO-CDP-MIB.my")
+
+
 
 # -----------------------------------------------------------------------------------
 # collect the API dynamic documentation
@@ -333,7 +337,7 @@ class DeviceSaveAPI(restful.Resource):
 class InterfaceAPI(restful.Resource):
     __doc__ = '''{
         "name": "InterfaceAPI",
-        "description": "GET interfaces from a device. Adding ?showmac=1 to the URI will list the MAC addresses of devices connected to ports. Be aware that it makes the query much slower. Adding ?showvlannames=1 will show the vlan names for each vlan. It will as well make the query slower. Adding ?showpoe=1 will provide the power consumption for each port. Again, it will make the query slower",
+        "description": "GET interfaces from a device. Adding ?showmac=1 to the URI will list the MAC addresses of devices connected to ports. Be aware that it makes the query much slower. Adding ?showvlannames=1 will show the vlan names for each vlan. It will as well make the query slower. Adding ?showpoe=1 will provide the power consumption for each port. Again, it will make the query slower. Adding ?showcdp=1 will provide CDP information for each port, at cost of some more time.",
         "auth": true,
         "auth-type": "BasicAuth",
         "params": [],
@@ -351,6 +355,7 @@ class InterfaceAPI(restful.Resource):
         showmac = request.args.get('showmac', 0)
         showvlannames = request.args.get('showvlannames', 0)
         showpoe = request.args.get('showpoe', 0)
+        showcdp = request.args.get('showcdp', 0)
 
         ro_community = credmgr.get_credentials(devicename)['ro_community']
         if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
@@ -381,6 +386,10 @@ class InterfaceAPI(restful.Resource):
 
             if showpoe:
                 poe = self.get_poe(devicename, m)
+
+            if showcdp:
+                cdpAPI = CDPAPI()
+                cdps = cdpAPI.get_cdp_from_device(devicename, m, ro_community)
 
             logger.debug('fn=DeviceAPI/get : %s : get interface info' % devicename)
             interfaces = []
@@ -431,6 +440,7 @@ class InterfaceAPI(restful.Resource):
                     else:
                         interface['macs'] = []
 
+                # POE
                 if showpoe:
                     if interface['ifDescr'] in poe:
                         interface['poeStatus'] = str(poe[interface['ifDescr']]['status'])
@@ -438,6 +448,20 @@ class InterfaceAPI(restful.Resource):
                     else:
                         interface['poeStatus'] = ''
                         interface['poePower'] = None
+
+                # CDP
+                if showcdp:
+                    interface['cdp'] = {}
+                    if index in cdps:
+                        interface['cdp']["cdpCacheDeviceId"] = cdps[index]["cdpCacheDeviceId"]
+                        interface['cdp']["cdpCacheDevicePort"] = cdps[index]["cdpCacheDevicePort"]
+                        interface['cdp']["cdpCachePlatform"] = cdps[index]["cdpCachePlatform"]
+                        interface['cdp']["cdpCacheLastChange"] = cdps[index]["cdpCacheLastChange"]
+                    else:
+                        interface['cdp']["cdpCacheDeviceId"] = None
+                        interface['cdp']["cdpCacheDevicePort"] = None
+                        interface['cdp']["cdpCachePlatform"] = None
+                        interface['cdp']["cdpCacheLastChange"] = None
 
                 interfaces.append(interface)
 
@@ -585,7 +609,7 @@ class MacAPI(restful.Resource):
         deviceinfo = autovivification.AutoVivification()
         deviceinfo['name'] = devicename
 
-        logger.debug('fn=InterfaceAPI/get : %s : creating the snimpy manager' % devicename)
+        logger.debug('fn=MacAPI/get : %s : creating the snimpy manager' % devicename)
         m = M(host = devicename, community = ro_community, version = 2, timeout=app.config['SNMP_TIMEOUT'], retries=app.config['SNMP_RETRIES'], none=True)
 
         try:
@@ -676,6 +700,91 @@ class MacAPI(restful.Resource):
 
         logger.debug("returning data")
         return macs
+
+
+
+# -----------------------------------------------------------------------------------
+# GET CDP info from a device
+# -----------------------------------------------------------------------------------
+class CDPAPI(restful.Resource):
+    __doc__ = '''{
+        "name": "CDPAPI",
+        "description": "GET CDP info from a device",
+        "auth": true,
+        "auth-type": "BasicAuth",
+        "params": [],
+        "returns": "A list of info indexed by ifIndex."
+    }'''
+    decorators = [auth.login_required]
+
+    def get(self, devicename):
+    #-------------------------
+        logger.debug('fn=CDPAPI/get : %s' % devicename)
+
+        tstart = datetime.now()
+
+        ro_community = credmgr.get_credentials(devicename)['ro_community']
+        if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
+            return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
+
+        deviceinfo = autovivification.AutoVivification()
+        deviceinfo['name'] = devicename
+
+        logger.debug('fn=CDPAPI/get : %s : creating the snimpy manager' % devicename)
+        m = M(host = devicename, community = ro_community, version = 2, timeout=app.config['SNMP_TIMEOUT'], retries=app.config['SNMP_RETRIES'], none=True)
+
+        try:
+            deviceinfo['sysName'] = m.sysName
+
+            cdps = self.get_cdp_from_device(devicename, m, ro_community)
+
+            cdps_organized = []
+            for ifindex in cdps:
+                entry = {}
+                entry["index"] = ifindex
+                entry["cdpCacheDeviceId"] = cdps[ifindex]['cdpCacheDeviceId']
+                entry["cdpCacheDevicePort"] = cdps[ifindex]['cdpCacheDevicePort']
+                entry["cdpCachePlatform"] = cdps[ifindex]['cdpCachePlatform']
+                entry["cdpCacheLastChange"] = cdps[ifindex]['cdpCacheLastChange']
+                cdps_organized.append(entry)
+
+        except snmp.SNMPException, e:
+            logger.error("fn=CDPAPI/get : %s : SNMP get failed : %s" % (devicename, e))
+            return errst.status('ERROR_OP', 'SNMP get failed on %s, cause : %s' % (devicename, e)), 200
+
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds + tdiff.days * 24 * 3600) * 10**6) / 1000
+        deviceinfo['query-duration'] = duration
+
+        logger.info('fn=CDPAPI/get : %s : duration=%s' % (devicename, duration))
+        deviceinfo['cdp'] = cdps_organized
+        return deviceinfo
+
+
+    # we create a dict indexed by ifIndex,
+    # it's then easier when having to enrich an interface info when knowing the ifIndex
+    def get_cdp_from_device(self, devicename, m, ro_community):
+    #-------------------------
+        logger.debug('fn=CDPAPI/get_cdp_from_device : %s' % devicename)
+
+        cdps = autovivification.AutoVivification()
+        try:
+            for cdp_idx in m.cdpCacheDeviceId:
+                ifindex = cdp_idx[0]
+                device = m.cdpCacheDeviceId[cdp_idx]
+                interface = m.cdpCacheDevicePort[cdp_idx]
+                platform = m.cdpCachePlatform[cdp_idx]
+                lastchange = m.cdpCacheLastChange[cdp_idx]
+                cdps[ifindex]['cdpCacheDeviceId'] = device
+                cdps[ifindex]['cdpCacheDevicePort'] = interface
+                cdps[ifindex]['cdpCachePlatform'] = platform
+                cdps[ifindex]['cdpCacheLastChange'] = lastchange
+        except:
+            logger.warn("fn=CDPAPI/get_cdp_from_device : failed SNMP get for CDP")
+
+        logger.debug("returning data")
+        return cdps
 
 
 
@@ -1126,6 +1235,10 @@ doc.add(loads(OIDpumpAPI.__doc__),          '/aj/api/v1/oidpump/<string:devicena
 
 api.add_resource(DeviceSshAPI,              '/aj/api/v1/device/ssh/<string:devicename>')
 doc.add(loads(DeviceSshAPI.__doc__),        '/aj/api/v1/device/ssh/<string:devicename>',                            DeviceSshAPI.__dict__['methods'])
+
+api.add_resource(CDPAPI,                    '/aj/api/v1/cdp/<string:devicename>')
+doc.add(loads(CDPAPI.__doc__),              '/aj/api/v1/cdp/<string:devicename>',                                  CDPAPI.__dict__['methods'])
+
 
 
 # -----------------------------------------------------------------------------------

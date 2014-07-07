@@ -2,6 +2,12 @@ Release notes
 =============
 
 
+7.7.2014
+--------
+
+- provide CDP information on each port with url:/aj/api/v1/interfaces/device.name?showcdp=1 or url:/aj/api/v1/cdp/device.name
+
+
 18.6.2014
 ---------
 
@@ -39,7 +45,7 @@ Code:
     LOG_MAX_SIZE = 1000000
     LOG_BACKUP_COUNT = 10
 
-- configuration of device config-save timeout. Sdd these entries into your app/etc/config.py :
+- configuration of device config-save timeout. Add these entries into your app/etc/config.py :
 
 Code:
 
