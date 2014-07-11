@@ -8,3 +8,6 @@ WARNING_github_public.txt
 aj/app/etc/credentials.py
 aj/app/etc/config.py
 aj/app/etc/credentials_msp.py
+util/enterprise-numbers
+util/debug.txt
+util/enterprise-numbers.json

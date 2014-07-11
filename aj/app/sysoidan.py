@@ -40,10 +40,21 @@ class SysOidAn():
 
         vendor = ''
         if sysoid.startswith('1.3.6.1.4.1.9'):
-            vendor = 'Cisco'
+            # we used "Cisco" historicaly
+            #vendor = 'Cisco'
+            # now use the real value
+            vendor = 'ciscoSystems'
+
+        elif sysoid.startswith('1.3.6.1.4.1.11'):
+            vendor = 'Hewlett-Packard'
+
+        elif sysoid.startswith('1.3.6.1.4.1.674'):
+            vendor = 'Dell Inc.'
+
         else:
             vendor = 'unknown'
 
+        # FIXME: only query the cisco table for Cisco products
         model = self.ciscoProducts.get(sysoid, 'unknown')
 
         return (vendor, model)
