@@ -11,3 +11,4 @@ aj/app/etc/credentials_msp.py
 util/enterprise-numbers
 util/debug.txt
 util/enterprise-numbers.json
+aj/app/etc/enterprise-numbers.json

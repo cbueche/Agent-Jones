@@ -245,6 +245,7 @@ def get_from_url(url):
 # --------------------------------------------------------------------------------
 
     tmp = tempfile.NamedTemporaryFile(prefix = 'iana_en_', suffix = '.tmp', delete = False)
+    print "reading from %s" % url
     urldata = urllib2.urlopen(url)
     while True:
         line = urldata.readline()

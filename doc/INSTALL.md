@@ -5,11 +5,11 @@ Installation must be done within a [Python virtual environment](http://www.virtu
 
     /opt/local/bin/virtualenv-2.6 --no-site-packages aj
     cd aj
-    source bin/activate 
+    source bin/activate
     pip install -r .../deployment/requirements.pip
     pip install PyCrypto
     pip install https://github.com/knipknap/exscript/zipball/master
-    
+
     rsync -av .../app ./
     python aj.py
     # patch snimpy if needed : https://github.com/vincentbernat/snimpy/commit/6857ca3af5ca4858161e7e8e3985bd07ecd7b4a2
@@ -38,6 +38,7 @@ Edit these files to your taste. Copy from the templates and adapt to your own se
 	app/etc/environment.conf
     app/etc/config.py
     app/etc/credentials.py
+    app/etc/enterprise-numbers.json (get running ../util/iana_enterprise_numbers_convert.py)
 
 The configuration happens with these steps:
 
@@ -48,5 +49,3 @@ The configuration happens with these steps:
 In the simple case, you would have one config.py containing data for each environment. This file can then be deployed to all servers. Beside, the environment.conf is then containing a per-server pointer.
 
 For more complex situations, you would have distinct config.py per environment. Beside, the environment.conf is then containing a per-server pointer.
-
-

@@ -2,6 +2,12 @@ Release notes
 =============
 
 
+28.7.2014
+--------
+
+- support full IANA enterprise file for sysObjectID to vendor mapping.
+
+
 7.7.2014
 --------
 

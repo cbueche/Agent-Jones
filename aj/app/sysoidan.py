@@ -17,44 +17,60 @@ class SysOidAn():
     '''
 
     from snimpy import mib
+    import json
+    import re
+    import os
 
-    def __init__(self):
+
+    def __init__(self, logger, root_path):
+        '''
+        construct enterprise table
+        '''
+        enterprise_file = self.os.path.join(root_path, 'etc/enterprise-numbers.json')
+        logger.debug('fn=SysOidAn/init : start loading IANA enterprise mapping file %s' % enterprise_file)
+        with open(enterprise_file) as enterprise_fh:
+            self.enterprises = self.json.load(enterprise_fh)
+        logger.debug('fn=SysOidAn/init : done loading IANA enterprise mapping file')
+
         '''
         construct ciscoProducts table
         '''
+        logger.debug('fn=SysOidAn/init : start loading Cisco product MIB')
         self.ciscoProducts = {}
         for entry in self.mib.getNodes("CISCO-PRODUCTS-MIB"):
             oid = '.'.join(map(str, entry.oid))
             self.ciscoProducts[oid] = str(entry)
+        logger.debug('fn=SysOidAn/init : done loading Cisco product MIB')
 
 
-    def translate_sysoid(self, sysoid):
+    def translate_sysoid(self, logger, sysoid):
         '''
         translate sysOid to vendor and model
         this is currently only implement for Cisco, but other vendors might be added
-        hence the primitive code. Will need to be implemented differently for multi-vendors
-
-        a start would be to parse http://www.iana.org/assignments/enterprise-numbers/enterprise-numbers
-        in a dict to have nice vendor mappings
         '''
 
+        logger.debug('fn=SysOidAn/translate_sysoid : got sysoid = %s' % sysoid)
+
+        # match sysoid to vendor
         vendor = ''
-        if sysoid.startswith('1.3.6.1.4.1.9'):
-            # we used "Cisco" historicaly
-            #vendor = 'Cisco'
-            # now use the real value
-            vendor = 'ciscoSystems'
-
-        elif sysoid.startswith('1.3.6.1.4.1.11'):
-            vendor = 'Hewlett-Packard'
-
-        elif sysoid.startswith('1.3.6.1.4.1.674'):
-            vendor = 'Dell Inc.'
-
+        model = ''
+        regex = self.re.compile(r'^1\.3\.6\.1\.4\.1\.(\d+)\.')
+        match = regex.search(sysoid)
+        if match:
+            vendor_id = match.group(1)
+            logger.debug('fn=SysOidAn/translate_sysoid : vendor id = %s' % vendor_id)
+            if vendor_id in self.enterprises:
+                vendor = self.enterprises[vendor_id]['o']
+            else:
+                vendor = 'unknown vendor (%s)' % vendor_id
+                logger.warn('fn=SysOidAn/translate_sysoid : vendor id %s not found, maybe you need to refresh the enterprise-numbers.json file' % vendor_id)
         else:
-            vendor = 'unknown'
+            logger.warn('fn=SysOidAn/translate_sysoid : broken sysoid string' % sysoid)
+            vendor = "unknown"
 
-        # FIXME: only query the cisco table for Cisco products
-        model = self.ciscoProducts.get(sysoid, 'unknown')
+        # where we know how to do it, map sysoid to model
+        if vendor == 'ciscoSystems':
+            model = self.ciscoProducts.get(sysoid, 'unknown')
 
-        return (vendor, model)
+        logger.debug('fn=SysOidAn/translate_sysoid : vendor = %s, model = %s' % (vendor, model))
+        return(vendor, model)

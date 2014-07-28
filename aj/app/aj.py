@@ -180,7 +180,7 @@ class DeviceAPI(restful.Resource):
             deviceinfo['cswMaxSwitchNum'] = max_switches
 
             # sysoid mapping
-            (deviceinfo['hwVendor'], deviceinfo['hwModel']) = sysoidmap.translate_sysoid(deviceinfo['sysObjectID'])
+            (deviceinfo['hwVendor'], deviceinfo['hwModel']) = sysoidmap.translate_sysoid(logger, deviceinfo['sysObjectID'])
 
         except Exception, e:
             logger.error("fn=DeviceAPI/get : %s : SNMP get failed : %s" % (devicename, e))
@@ -1268,7 +1268,7 @@ util = utils.Utilities()
 errst = error_handling.Errors()
 
 # sysoid mapping
-sysoidmap = sysoidan.SysOidAn()
+sysoidmap = sysoidan.SysOidAn(logger, app.root_path)
 
 # for SSH commands
 commander = sshcmd.SshCmd()
