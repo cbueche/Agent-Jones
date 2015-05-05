@@ -38,7 +38,7 @@ Edit these files to your taste. Copy from the templates and adapt to your own se
 	app/etc/environment.conf
     app/etc/config.py
     app/etc/credentials.py
-    app/etc/enterprise-numbers.json (get running ../util/iana_enterprise_numbers_convert.py)
+    app/etc/enterprise-numbers.json (get it by running ../util/iana_enterprise_numbers_convert.py)
 
 The configuration happens with these steps:
 

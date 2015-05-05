@@ -1,3 +1,4 @@
+.idea
 aj/bin
 aj/include
 aj/lib
@@ -12,3 +13,4 @@ util/enterprise-numbers
 util/debug.txt
 util/enterprise-numbers.json
 aj/app/etc/enterprise-numbers.json
+aj/.python-version
