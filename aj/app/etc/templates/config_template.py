@@ -39,6 +39,18 @@ class Config(object):
     SNMP_TIMEOUT_LONG = 30
     SNMP_RETRIES_NONE = 0
 
+    # how do we use ping on this platform
+    sysname = os.uname()[0]
+    if sysname == 'Linux':    # ok for at least Ubuntu and CentOS
+        PING_COMMAND = ["ping", "-n", "-w", "5", "-c", "5", "-i", "0.3"]
+
+    elif sysname == 'Darwin':   # ok for at least OS X 10.10
+        PING_COMMAND = ["ping", "-n", "-t", "5", "-c", "5", "-i", "0.3"]
+
+    else:
+        # some sane feedback
+        logger.warn('Config : unknown system <%s>, using stock ping command' % sysname)
+        PING_COMMAND = ["ping", "-c", "5", "-i", "0.3"]
 
 # values for prod
 class ProductionConfig(Config):

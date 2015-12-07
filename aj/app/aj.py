@@ -33,6 +33,7 @@ import os
 import sys
 import ConfigParser
 import netaddr
+from subprocess import Popen, PIPE, STDOUT
 
 import autovivification
 
@@ -228,6 +229,79 @@ class DeviceAPI(restful.Resource):
             return errst.status('ERROR_MIB_ENTITY', 'could not get an entity parent in get_serial')
         else:
             return (max_switches, hardware_info)
+
+
+
+# -----------------------------------------------------------------------------------
+# POST on a single $device/action
+# -----------------------------------------------------------------------------------
+class DeviceActionAPI(restful.Resource):
+    __doc__ = '''{
+        "name": "DeviceActionAPI",
+        "description": "POST action to a single device. Only possible action for now is ping",
+        "auth": true,
+        "auth-type": "BasicAuth",
+        "params": ["type=ping"],
+        "returns": "Results of the action."
+    }'''
+
+    # check argument
+    def __init__(self):
+        self.reqparse = reqparse.RequestParser()
+        self.reqparse.add_argument('type', type = str, required = True, help = 'No action provided')
+        super(DeviceActionAPI, self).__init__()
+
+    decorators = [auth.login_required]
+
+    def post(self, devicename):
+
+        args = self.reqparse.parse_args()
+        action = args['type']
+
+        logger.debug('fn=DeviceActionAPI/post : %s / %s' % (devicename, action))
+
+        tstart = datetime.now()
+
+        deviceinfo = autovivification.AutoVivification()
+        deviceinfo['name'] = devicename
+        deviceinfo['action'] = action
+
+
+        if action == 'ping':
+
+            logger.debug('fn=DeviceActionAPI/post : %s : run action %s' % (devicename, action))
+
+            ping_command = app.config['PING_COMMAND'][:]
+            ping_command.append(devicename)
+
+            logger.debug("running ping-command <" + ' '.join(ping_command) + ">")
+            deviceinfo['cmd'] = ' '.join(ping_command)
+
+            try:
+                cm = Popen(ping_command, stdout=PIPE, stderr=STDOUT)
+                stdout, stderr = cm.communicate()
+                rc = cm.returncode
+                stderr = '' if stderr is None else stderr.encode('utf-8')
+                logger.debug('fn=DeviceActionAPI/post : %s : rc=<%s>, stdout=<%s>, stderr=<%s>' % (devicename, rc, stdout, stderr))
+            except Exception, e:
+                logger.error("fn=DeviceActionAPI/post : %s : ping action failed : %s" % (devicename, e))
+                return errst.status('ERROR_OP', 'ping action for %s failed, cause : %s' % (devicename, e)), 200
+
+            deviceinfo['status'] = 'failed' if rc else 'ok'
+            deviceinfo['rc'] = rc
+            deviceinfo['stdout'] = stdout
+            deviceinfo['stderr'] = stderr
+
+        else:
+            return errst.status('ERROR_OP', 'unknown action <%s>' % action), 200
+
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds + tdiff.days * 24 * 3600) * 10**6) / 1000
+        deviceinfo['query-duration'] = duration
+
+        logger.info('fn=DeviceActionAPI/post : %s : duration=%s' % (devicename, deviceinfo['query-duration']))
+        return deviceinfo
 
 
 
@@ -1219,6 +1293,9 @@ doc = DocCollection()
 
 api.add_resource(DeviceAPI,                 '/aj/api/v1/device/<string:devicename>')
 doc.add(loads(DeviceAPI.__doc__),           '/aj/api/v1/device/<string:devicename>',                                DeviceAPI.__dict__['methods'])
+
+api.add_resource(DeviceActionAPI,           '/aj/api/v1/device/<string:devicename>/action')
+doc.add(loads(DeviceActionAPI.__doc__),     '/aj/api/v1/device/<string:devicename>/action',                         DeviceActionAPI.__dict__['methods'])
 
 api.add_resource(DeviceSaveAPI,             '/aj/api/v1/devicesave/<string:devicename>')
 doc.add(loads(DeviceSaveAPI.__doc__),       '/aj/api/v1/devicesave/<string:devicename>',                            DeviceSaveAPI.__dict__['methods'])

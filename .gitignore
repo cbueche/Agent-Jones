@@ -1,14 +1,17 @@
-.idea
-aj/bin
-aj/include
-aj/lib
-aj/share
+#
 *.pyc
 .Python
-WARNING_github_public.txt
+
+# exclude productive config files
 aj/app/etc/*.py
+
+# IANA stuff can be re-generated
 util/enterprise-numbers
-util/debug.txt
 util/enterprise-numbers.json
 aj/app/etc/enterprise-numbers.json
+
+# virtualenv
 aj/.python-version
+
+# Pycharm
+.idea
