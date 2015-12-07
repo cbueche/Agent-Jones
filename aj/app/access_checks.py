@@ -43,6 +43,5 @@ class AccessChecks():
                 return True
 
         except Exception, e:
-            logger.error("fn=AccessChecks/SNMP-SET : %s : test failed : %s" % (devicename, e))
+            logger.error("fn=AccessChecks/SNMP-GET or SNMP-SET : %s : test failed : %s" % (devicename, e))
             return False
-

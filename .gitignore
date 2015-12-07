@@ -1,3 +1,4 @@
+.idea
 aj/bin
 aj/include
 aj/lib
@@ -5,6 +6,9 @@ aj/share
 *.pyc
 .Python
 WARNING_github_public.txt
-aj/app/etc/credentials.py
-aj/app/etc/config.py
-aj/app/etc/credentials_msp.py
+aj/app/etc/*.py
+util/enterprise-numbers
+util/debug.txt
+util/enterprise-numbers.json
+aj/app/etc/enterprise-numbers.json
+aj/.python-version

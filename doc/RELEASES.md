@@ -2,6 +2,18 @@ Release notes
 =============
 
 
+5.5.2015
+--------
+
+- fix a bug, when calling interfaces() and specifying the show flags as xxx=0, the flags are now correctly interpreted as False.
+
+
+28.7.2014
+---------
+
+- support full IANA enterprise file for sysObjectID to vendor mapping.
+
+
 7.7.2014
 --------
 

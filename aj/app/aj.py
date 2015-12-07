@@ -180,7 +180,7 @@ class DeviceAPI(restful.Resource):
             deviceinfo['cswMaxSwitchNum'] = max_switches
 
             # sysoid mapping
-            (deviceinfo['hwVendor'], deviceinfo['hwModel']) = sysoidmap.translate_sysoid(deviceinfo['sysObjectID'])
+            (deviceinfo['hwVendor'], deviceinfo['hwModel']) = sysoidmap.translate_sysoid(logger, deviceinfo['sysObjectID'])
 
         except Exception, e:
             logger.error("fn=DeviceAPI/get : %s : SNMP get failed : %s" % (devicename, e))
@@ -345,17 +345,28 @@ class InterfaceAPI(restful.Resource):
     }'''
     decorators = [auth.login_required]
 
+    # check arguments
+    def __init__(self):
+        self.reqparse = reqparse.RequestParser()
+        self.reqparse.add_argument('showmac', default=0, type = int, required = False, help = 'showmac=0|1. List the MAC addresses of devices connected to ports.')
+        self.reqparse.add_argument('showvlannames', default=0, type = int, required = False, help = 'showvlannames=0|1. Show the vlan names for each vlan.')
+        self.reqparse.add_argument('showpoe', default=0, type = int, required = False, help = 'showpoe=0|1. Provide the power consumption for each port.')
+        self.reqparse.add_argument('showcdp', default=0, type = int, required = False, help = 'showcdp=0|1. Provide the CDP information for each port.')
+        super(InterfaceAPI, self).__init__()
+
     def get(self, devicename):
 
         logger.debug('fn=InterfaceAPI/get : %s' % devicename)
 
         tstart = datetime.now()
 
-        # two possible query parameters
-        showmac = request.args.get('showmac', 0)
-        showvlannames = request.args.get('showvlannames', 0)
-        showpoe = request.args.get('showpoe', 0)
-        showcdp = request.args.get('showcdp', 0)
+        # decode query parameters and transform them into booleans. Does apparently not work if done in reqparse.add_argument() above
+        args = self.reqparse.parse_args()
+        showmac = True if args['showmac'] else False
+        showvlannames = True if args['showvlannames'] else False
+        showpoe = True if args['showpoe'] else False
+        showcdp = True if args['showcdp'] else False
+        logger.info('fn=InterfaceAPI/get : %s : showmac=%s, showvlannames=%s, showpoe=%s, showcdp=%s' % (devicename, showmac, showvlannames, showpoe, showcdp))
 
         ro_community = credmgr.get_credentials(devicename)['ro_community']
         if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
@@ -698,7 +709,7 @@ class MacAPI(restful.Resource):
                     logger.warn("fn=MacAPI/get_macs_from_device : failed, probably an unused VLAN (%s) on a buggy IOS producing SNMP timeout. Ignoring this VLAN" % (vlan_nr))
                     #pass
 
-        logger.debug("returning data")
+        logger.debug("fn=MacAPI/get_macs_from_device : returning data")
         return macs
 
 
@@ -783,7 +794,7 @@ class CDPAPI(restful.Resource):
         except:
             logger.warn("fn=CDPAPI/get_cdp_from_device : failed SNMP get for CDP")
 
-        logger.debug("returning data")
+        logger.debug("fn=CDPAPI/get_cdp_from_device : returning data")
         return cdps
 
 
@@ -1268,7 +1279,7 @@ util = utils.Utilities()
 errst = error_handling.Errors()
 
 # sysoid mapping
-sysoidmap = sysoidan.SysOidAn()
+sysoidmap = sysoidan.SysOidAn(logger, app.root_path)
 
 # for SSH commands
 commander = sshcmd.SshCmd()
