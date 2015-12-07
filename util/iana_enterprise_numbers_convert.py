@@ -8,8 +8,8 @@
 #
 # --------------------------------------------------------------------------------
 # usage:
-# python iana_enterprise_numbers_convert_2.py -i http://www.iana.org/assignments/enterprise-numbers -o ./enterprise-numbers.json
-# python iana_enterprise_numbers_convert_2.py -i file:///tmp/enterprise-numbers -o ./enterprise-numbers.json
+# python iana_enterprise_numbers_convert.py -i http://www.iana.org/assignments/enterprise-numbers -o ./enterprise-numbers.json
+# python iana_enterprise_numbers_convert.py -i file:///tmp/enterprise-numbers -o ./enterprise-numbers.json
 #    -i : input URL
 #    -o : output file
 #    -d : enable debug (very verbose)
