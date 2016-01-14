@@ -2,6 +2,12 @@ Release notes
 =============
 
 
+15.1.2016
+---------
+
+- add DHCP snoop collection on each port with /aj/api/v1/interfaces/device.name?showdhcp=1
+
+
 5.5.2015
 --------
 

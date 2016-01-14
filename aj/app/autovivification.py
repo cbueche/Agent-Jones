@@ -3,7 +3,6 @@
 autovivification.py - direct deep dict keys creation
 '''
 
-# ----
 
 # -----------------------------------------------------------------------------------
 class AutoVivification(dict):
