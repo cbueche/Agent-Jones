@@ -34,6 +34,7 @@ import sys
 import ConfigParser
 import netaddr
 from subprocess import Popen, PIPE, STDOUT
+import socket
 
 import autovivification
 
@@ -103,6 +104,16 @@ load(mib_path + "CISCO-POWER-ETHERNET-EXT-MIB.my")
 # CDP / Cisco Discovery Protocol
 load(mib_path + "CISCO-CDP-MIB.my")
 
+# DHCP snooping on Cisco switches
+load(mib_path + "P-BRIDGE-MIB.my")
+load(mib_path + "RFC-1212.my")
+load(mib_path + "RFC1155-SMI.my")
+load(mib_path + "RFC1213-MIB.my")
+load(mib_path + "RFC1271-MIB.my")
+load(mib_path + "TOKEN-RING-RMON-MIB.my")
+load(mib_path + "RMON2-MIB.my")
+load(mib_path + "Q-BRIDGE.my")
+load(mib_path + "CISCO-DHCP-SNOOPING-MIB.my")
 
 
 # -----------------------------------------------------------------------------------
@@ -122,7 +133,6 @@ class DocCollection():
         self.apidoc[name]['auth-type']   = stanza['auth-type']
         self.apidoc[name]['params']      = stanza['params']
         self.apidoc[name]['returns']     = stanza['returns']
-
 
 
 # -----------------------------------------------------------------------------------
@@ -229,7 +239,6 @@ class DeviceAPI(restful.Resource):
             return errst.status('ERROR_MIB_ENTITY', 'could not get an entity parent in get_serial')
         else:
             return (max_switches, hardware_info)
-
 
 
 # -----------------------------------------------------------------------------------
@@ -426,6 +435,7 @@ class InterfaceAPI(restful.Resource):
         self.reqparse.add_argument('showvlannames', default=0, type = int, required = False, help = 'showvlannames=0|1. Show the vlan names for each vlan.')
         self.reqparse.add_argument('showpoe', default=0, type = int, required = False, help = 'showpoe=0|1. Provide the power consumption for each port.')
         self.reqparse.add_argument('showcdp', default=0, type = int, required = False, help = 'showcdp=0|1. Provide the CDP information for each port.')
+        self.reqparse.add_argument('showdhcp', default=0, type = int, required = False, help = 'showdhcp=0|1. Provide the DHCP snooped information for each port.')
         super(InterfaceAPI, self).__init__()
 
     def get(self, devicename):
@@ -440,7 +450,8 @@ class InterfaceAPI(restful.Resource):
         showvlannames = True if args['showvlannames'] else False
         showpoe = True if args['showpoe'] else False
         showcdp = True if args['showcdp'] else False
-        logger.info('fn=InterfaceAPI/get : %s : showmac=%s, showvlannames=%s, showpoe=%s, showcdp=%s' % (devicename, showmac, showvlannames, showpoe, showcdp))
+        showdhcp = True if args['showdhcp'] else False
+        logger.info('fn=InterfaceAPI/get : %s : showmac=%s, showvlannames=%s, showpoe=%s, showcdp=%s, showdhcp=%s' % (devicename, showmac, showvlannames, showpoe, showcdp, showdhcp))
 
         ro_community = credmgr.get_credentials(devicename)['ro_community']
         if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
@@ -450,6 +461,7 @@ class InterfaceAPI(restful.Resource):
         deviceinfo['name'] = devicename
 
         logger.debug('fn=InterfaceAPI/get : %s : creating the snimpy manager' % devicename)
+        # FIXME : the timeout here is probably a bad idea. The summ of apps is likely to fail
         m = M(host = devicename, community = ro_community, version = 2, timeout=app.config['SNMP_TIMEOUT'], retries=app.config['SNMP_RETRIES'], none=True)
 
         # all SNMP gets under one big try
@@ -476,11 +488,15 @@ class InterfaceAPI(restful.Resource):
                 cdpAPI = CDPAPI()
                 cdps = cdpAPI.get_cdp_from_device(devicename, m, ro_community)
 
-            logger.debug('fn=DeviceAPI/get : %s : get interface info' % devicename)
+            if showdhcp:
+                dhcpAPI = DHCPsnoopAPI()
+                dhcp_snooping_entries = dhcpAPI.get_dhcp_snooping_from_device(devicename, m, ro_community)
+
+            logger.debug('fn=InterfaceAPI/get : %s : get interface info' % devicename)
             interfaces = []
             for index in m.ifDescr:
                 interface = {}
-                logger.debug('fn=DeviceAPI/get : %s : get interface info for index %s' % (devicename, index))
+                logger.debug('fn=InterfaceAPI/get : %s : get interface info for index %s' % (devicename, index))
                 interface['index']                                         = index
                 interface['ifAdminStatus'], interface['ifAdminStatusText'] = util.translate_status(str(m.ifAdminStatus[index]))
                 interface['ifOperStatus'], interface['ifOperStatusText']   = util.translate_status(str(m.ifOperStatus[index]))
@@ -548,12 +564,27 @@ class InterfaceAPI(restful.Resource):
                         interface['cdp']["cdpCachePlatform"] = None
                         interface['cdp']["cdpCacheLastChange"] = None
 
+                # DHCP
+                if showdhcp:
+                    # an interface might have more than one MAC-IP binding so make this is a list
+                    interface['dhcpsnoop'] = []
+                    for entry in dhcp_snooping_entries:
+                        # the code below removes the idx key-value from the dict
+                        # so for the next interface, the equality match below would fail.
+                        # this avoids that case.
+                        if 'interface_idx' in entry:
+                            if entry['interface_idx'] == index:
+                                # no need to add the idx element, it's redundant here
+                                del entry['interface_idx']
+                                interface['dhcpsnoop'].append(entry)
+
+                # all infos are added to this interface, add it to the final list
                 interfaces.append(interface)
 
             deviceinfo['interfaces'] = interfaces
 
         except Exception, e:
-            logger.error("fn=InterfaceAPI/get : %s : SNMP get failed : %s" % (devicename, e))
+            logger.error("fn=InterfaceAPI/get : %s : at end, SNMP get failed : %s" % (devicename, e))
             return errst.status('ERROR_OP', 'SNMP get failed on %s, cause : %s' % (devicename, e)), 200
 
         # TODO : an interface could belong to many VLANs when trunking.
@@ -874,6 +905,129 @@ class CDPAPI(restful.Resource):
 
 
 # -----------------------------------------------------------------------------------
+# GET DHCP snooping info from a device
+# -----------------------------------------------------------------------------------
+class DHCPsnoopAPI(restful.Resource):
+    __doc__ = '''{
+        "name": "DHCPsnoopAPI",
+        "description": "GET DHCP snooping info from a device",
+        "auth": true,
+        "auth-type": "BasicAuth",
+        "params": [],
+        "returns": "FIXME : A list of info indexed by ifIndex."
+    }'''
+    decorators = [auth.login_required]
+
+    def get(self, devicename):
+    #-------------------------
+        logger.debug('fn=DHCPsnoopAPI/get : %s' % devicename)
+
+        tstart = datetime.now()
+
+        ro_community = credmgr.get_credentials(devicename)['ro_community']
+        if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
+            return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
+
+        deviceinfo = autovivification.AutoVivification()
+        deviceinfo['name'] = devicename
+
+        logger.debug('fn=DHCPsnoopAPI/get : %s : creating the snimpy manager' % devicename)
+        m = M(host = devicename, community = ro_community, version = 2, timeout=app.config['SNMP_TIMEOUT'], retries=app.config['SNMP_RETRIES'], none=True)
+
+        try:
+            deviceinfo['sysName'] = m.sysName
+            deviceinfo['dhcpsnoop'] = self.get_dhcp_snooping_from_device(devicename, m, ro_community)
+
+        except snmp.SNMPException, e:
+            logger.error("fn=DHCPsnoopAPI/get : %s : SNMP get failed : %s" % (devicename, e))
+            return errst.status('ERROR_OP', 'SNMP get failed on %s, cause : %s' % (devicename, e)), 200
+
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds + tdiff.days * 24 * 3600) * 10**6) / 1000
+        deviceinfo['query-duration'] = duration
+
+        logger.info('fn=DHCPsnoopAPI/get : %s : duration=%s' % (devicename, duration))
+        return deviceinfo
+
+
+    # list of DHCP snopped entries. some interfaces (idx) can occur multiple times,
+    # called from DHCPsnoopAPI/get above, and optionally by InterfaceAPI/get if asked so
+    def get_dhcp_snooping_from_device(self, devicename, m, ro_community):
+    #-------------------------
+
+        inet_address_types = {
+            0: 'unknown',
+            1: 'ipv4',
+            2: 'ipv6',
+            3: 'ipv4z',
+            4: 'ipv6z',
+            16: 'dns'
+        }
+
+        binding_status = {
+            1: 'active',
+            2: 'notInService',
+            3: 'notReady',
+            4: 'createAndGo',
+            5: 'createAndWait',
+            6: 'destroy'
+        }
+
+        logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s' % devicename)
+        dhcp_snooping_entries = []
+        try:
+            for entry in m.cdsBindingsAddrType:
+                vlan = int(entry[0])
+                mac = str(entry[1])
+                # reformat mac: comes as "0:22:90:1b:6:e6" and should be "00-22-90-1B-06-E6"
+                mac_e = netaddr.EUI(mac)
+                mac_f = str(mac_e)
+                # add vendor
+                try:
+                    vendor = mac_e.oui.registration().org
+                except netaddr.NotRegisteredError as e:
+                    logger.warn('fn=DHCPsnoopAPI: %s : error %s : unknown vendor for %s' % (devicename, e, mac_f))
+                    vendor = 'unknown'
+                address_type = inet_address_types.get(m.cdsBindingsAddrType[entry], 'unsupported')
+                ip = self.convert_ip_from_snmp_format(address_type, m.cdsBindingsIpAddress[entry])
+                interface_idx = m.cdsBindingsInterface[entry]
+                leased_time = m.cdsBindingsLeasedTime[entry]
+                status = binding_status.get(m.cdsBindingsStatus[entry], 'unsupported')
+                hostname = m.cdsBindingsHostname[entry]
+
+                logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : vlan=%s, mac=%s, vendor=%s, address_type=%s, ip=%s, interface_idx=%s, leased_time=%s, status=%s, hostname=%s' % (vlan, mac_f, vendor, address_type, ip, interface_idx, leased_time, status, hostname))
+                dhcp_entry = {'interface_idx': interface_idx,
+                              'vlan': vlan,
+                              'mac': mac_f,
+                              'vendor': vendor,
+                              'type': address_type,
+                              'ip': ip,
+                              'leased_time': leased_time,
+                              'status': status,
+                              'hostname': hostname
+                              }
+                dhcp_snooping_entries.append(dhcp_entry)
+        except snmp.SNMPException, e:
+            logger.warn("fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : failed SNMP get for DHCP snooping : %s" % e)
+
+        logger.debug("fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : returning data")
+        return dhcp_snooping_entries
+
+
+    def convert_ip_from_snmp_format(self, address_type, ip_address):
+
+        if address_type in ('ipv4', 'ipv4z'):
+            return socket.inet_ntoa(ip_address)
+        elif address_type in ('ipv6', 'ipv6z'):
+            return socket.inet_ntop(AF_INET6, ip_address)
+        elif address_type == 'dns':
+            return ip_address
+        else:
+            return 'IP conversion not yet supported for type %s, ip %s' % (address_type, ip_address)
+
+
+# -----------------------------------------------------------------------------------
 # GET vlan list from a device
 # -----------------------------------------------------------------------------------
 class vlanlistAPI(restful.Resource):
@@ -1009,7 +1163,7 @@ class PortToVlanAPI(restful.Resource):
             m.vmVlan[ifindex] = vlan
 
         except Exception, e:
-            logger.error("fn=DeviceAPI/get : %s : SNMP get failed : %s" % (devicename, e))
+            logger.error("fn=PortToVlanAPI/get : %s : SNMP get failed : %s" % (devicename, e))
             return errst.status('ERROR_OP', 'SNMP get failed on %s, cause : %s' % (devicename, e)), 200
 
         tend = datetime.now()
@@ -1308,6 +1462,9 @@ doc.add(loads(InterfaceCounterAPI.__doc__), '/aj/api/v1/interface/counter/<strin
 
 api.add_resource(MacAPI,                    '/aj/api/v1/macs/<string:devicename>')
 doc.add(loads(MacAPI.__doc__),              '/aj/api/v1/macs/<string:devicename>',                                  MacAPI.__dict__['methods'])
+
+api.add_resource(DHCPsnoopAPI,              '/aj/api/v1/dhcpsnoop/<string:devicename>')
+doc.add(loads(DHCPsnoopAPI.__doc__),        '/aj/api/v1/dhcpsnoop/<string:devicename>',                             DHCPsnoopAPI.__dict__['methods'])
 
 api.add_resource(vlanlistAPI,               '/aj/api/v1/vlans/<string:devicename>')
 doc.add(loads(vlanlistAPI.__doc__),         '/aj/api/v1/vlans/<string:devicename>',                                 vlanlistAPI.__dict__['methods'])

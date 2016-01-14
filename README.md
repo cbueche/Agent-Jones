@@ -26,6 +26,7 @@ Features
 - Configure an interface : adminStatus and ifAlias (called description in Cisco language).
 - List the connected MAC addresses : MAC(ethernet) to port mappings from a device.
 - CDP information for each port.
+- Get DHCP snooping information
 - Get the interface counters of one interface.
 - SNMP get or walk on a OID
 - Run commands over SSH
