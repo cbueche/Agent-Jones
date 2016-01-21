@@ -23,5 +23,3 @@ class AutoVivification(dict):
         except KeyError:
             value = self[item] = type(self)()
             return value
-
-

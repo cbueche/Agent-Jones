@@ -10,7 +10,6 @@ Author : Ch. Bueche
 '''
 
 
-
 # -----------------------------------------------------------------------------------
 class SshCmd():
 
@@ -30,7 +29,6 @@ class SshCmd():
     from Exscript.protocols import SSH2
     from Exscript import Account
     import time
-
 
     def run_by_ssh(self, device, user, password, driver, cmdlist):
         '''
@@ -91,7 +89,8 @@ class SshCmd():
             return (1, e, output_indexed)
 
         # sometimes sending "exit" produce a close before we can explicitely do it ourselves
-        # so take those two commands out of the try/except block and ignore their failures
+        # so take those two commands out of the try/except block and ignore
+        # their failures
         conn.send('exit')
         conn.close()
 

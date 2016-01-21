@@ -8,7 +8,6 @@ Author : Ch. Bueche
 '''
 
 
-
 # -----------------------------------------------------------------------------------
 class Errors():
 
@@ -30,18 +29,18 @@ class Errors():
     def status(self, status_idx, msg):
 
         if status_idx in self.statii:
-            return {'error' : 
-                        {'nr':      self.statii[status_idx]['nr'], 
-                         'code':    self.statii[status_idx]['code'],
-                         'text':    self.statii[status_idx]['text'],
-                         'details': msg
-                        }
+            return {'error':
+                    {'nr':      self.statii[status_idx]['nr'],
+                     'code':    self.statii[status_idx]['code'],
+                     'text':    self.statii[status_idx]['text'],
+                     'details': msg
+                     }
                     }
         else:
-            return {'error' :
-                        {'nr':      999,
-                         'code':    'unknown status code in error_handling.py',
-                         'text':    'unknown status text in error_handling.py',
-                         'details': msg
-                        }
+            return {'error':
+                    {'nr':      999,
+                     'code':    'unknown status code in error_handling.py',
+                     'text':    'unknown status text in error_handling.py',
+                     'details': msg
+                     }
                     }
