@@ -7,7 +7,7 @@ Author : Ch. Bueche
 
 '''
 
-
+import logging
 
 # -----------------------------------------------------------------------------------
 class SysOidAn():
@@ -21,27 +21,32 @@ class SysOidAn():
     import re
     import os
 
-
     def __init__(self, logger, root_path):
         '''
         construct enterprise table
         '''
-        enterprise_file = self.os.path.join(root_path, 'etc/enterprise-numbers.json')
-        logger.debug('fn=SysOidAn/init : start loading IANA enterprise mapping file %s' % enterprise_file)
+
+        self.logger = logging.getLogger('aj.sysoidan')
+        self.logger.info('creating an instance of sysoidan')
+
+        enterprise_file = self.os.path.join(
+            root_path, 'etc/enterprise-numbers.json')
+        self.logger.debug(
+            'fn=SysOidAn/init : start loading IANA enterprise mapping file %s' % enterprise_file)
         with open(enterprise_file) as enterprise_fh:
             self.enterprises = self.json.load(enterprise_fh)
-        logger.debug('fn=SysOidAn/init : done loading IANA enterprise mapping file')
+        self.logger.debug(
+            'fn=SysOidAn/init : done loading IANA enterprise mapping file')
 
         '''
         construct ciscoProducts table
         '''
-        logger.debug('fn=SysOidAn/init : start loading Cisco product MIB')
+        self.logger.debug('fn=SysOidAn/init : start loading Cisco product MIB')
         self.ciscoProducts = {}
         for entry in self.mib.getNodes("CISCO-PRODUCTS-MIB"):
             oid = '.'.join(map(str, entry.oid))
             self.ciscoProducts[oid] = str(entry)
-        logger.debug('fn=SysOidAn/init : done loading Cisco product MIB')
-
+        self.logger.debug('fn=SysOidAn/init : done loading Cisco product MIB')
 
     def translate_sysoid(self, logger, sysoid):
         '''
@@ -49,7 +54,7 @@ class SysOidAn():
         this is currently only implement for Cisco, but other vendors might be added
         '''
 
-        logger.debug('fn=SysOidAn/translate_sysoid : got sysoid = %s' % sysoid)
+        self.logger.debug('fn=SysOidAn/translate_sysoid : got sysoid = %s' % sysoid)
 
         # match sysoid to vendor
         vendor = ''
@@ -58,19 +63,23 @@ class SysOidAn():
         match = regex.search(sysoid)
         if match:
             vendor_id = match.group(1)
-            logger.debug('fn=SysOidAn/translate_sysoid : vendor id = %s' % vendor_id)
+            self.logger.debug(
+                'fn=SysOidAn/translate_sysoid : vendor id = %s' % vendor_id)
             if vendor_id in self.enterprises:
                 vendor = self.enterprises[vendor_id]['o']
             else:
                 vendor = 'unknown vendor (%s)' % vendor_id
-                logger.warn('fn=SysOidAn/translate_sysoid : vendor id %s not found, maybe you need to refresh the enterprise-numbers.json file' % vendor_id)
+                self.logger.warn(
+                    'fn=SysOidAn/translate_sysoid : vendor id %s not found, maybe you need to refresh the enterprise-numbers.json file' % vendor_id)
         else:
-            logger.warn('fn=SysOidAn/translate_sysoid : broken sysoid string' % sysoid)
+            self.logger.warn(
+                'fn=SysOidAn/translate_sysoid : broken sysoid string' % sysoid)
             vendor = "unknown"
 
         # where we know how to do it, map sysoid to model
         if vendor == 'ciscoSystems':
             model = self.ciscoProducts.get(sysoid, 'unknown')
 
-        logger.debug('fn=SysOidAn/translate_sysoid : vendor = %s, model = %s' % (vendor, model))
+        self.logger.debug(
+            'fn=SysOidAn/translate_sysoid : vendor = %s, model = %s' % (vendor, model))
         return(vendor, model)

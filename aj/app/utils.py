@@ -8,7 +8,6 @@ Author : Ch. Bueche
 '''
 
 
-
 # -----------------------------------------------------------------------------------
 class Utilities():
 
@@ -22,13 +21,13 @@ class Utilities():
         '''
 
         status_map = {
-            'up(1)'             : [1, 'up'],
-            'down(2)'           : [2, 'down'],
-            'testing(3)'        : [3, 'testing'],
-            'unknown(4)'        : [4, 'unknown'],
-            'dormant(5)'        : [5, 'dormant'],
-            'notPresent(6)'     : [6, 'notPresent'],
-            'lowerLayerDown(7)' : [7, 'lowerLayerDown']
+            'up(1)': [1, 'up'],
+            'down(2)': [2, 'down'],
+            'testing(3)': [3, 'testing'],
+            'unknown(4)': [4, 'unknown'],
+            'dormant(5)': [5, 'dormant'],
+            'notPresent(6)': [6, 'notPresent'],
+            'lowerLayerDown(7)': [7, 'lowerLayerDown']
         }
 
         if status in status_map:
@@ -36,6 +35,3 @@ class Utilities():
         else:
             logger.warn("could not translate status <%s>" % status)
             return [status, status]
-
-
-
