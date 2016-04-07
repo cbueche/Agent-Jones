@@ -16,6 +16,9 @@ Repository & documentation : https://github.com/cbueche/Agent-Jones
 # initialization
 # -----------------------------------------------------------------------------------
 
+# update doc/RELEASES.md when touching this
+__version__ = '6.4.2016'
+
 from flask import Flask, url_for, make_response, jsonify, send_from_directory, request
 from flask import render_template
 from flask.json import loads
@@ -125,6 +128,7 @@ load(mib_path + "CISCO-DHCP-SNOOPING-MIB.my")
 class DocCollection():
 
     apidoc = autovivification.AutoVivification()
+    apidoc['AJ_version'] = __version__
 
     def add(self, stanza, uri, methods):
 
@@ -164,7 +168,7 @@ class DeviceAPI(restful.Resource):
         logger.debug(
             'fn=DeviceAPI/get : %s : creating the snimpy manager' % devicename)
         ro_community = credmgr.get_credentials(devicename)['ro_community']
-        if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
+        if not check.check_snmp(M, devicename, ro_community, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         logger.debug('fn=DeviceAPI/get : %s : request device info' %
@@ -175,11 +179,13 @@ class DeviceAPI(restful.Resource):
               timeout=app.config['SNMP_TIMEOUT'],
               retries=app.config['SNMP_RETRIES'],
               cache=app.config['SNMP_CACHE'],
+              bulk=False,
               none=True)
 
-        # all SNMP gets under one big try
+        # generic SNMP stuff under one large attempt
         try:
 
+            # generic device stuff
             deviceinfo['sysName'] = m.sysName
             deviceinfo['sysDescr'] = m.sysDescr
             deviceinfo['sysContact'] = m.sysContact
@@ -192,7 +198,23 @@ class DeviceAPI(restful.Resource):
 
             deviceinfo['sysUpTime'] = int(m.sysUpTime) / 100
 
-            # POE
+            logger.debug(
+                'fn=DeviceAPI/get : %s : get serial numbers' % devicename)
+            (max_switches, deviceinfo['entities']) = self.get_serial(m, devicename)
+            deviceinfo['cswMaxSwitchNum'] = max_switches
+
+            # sysoid mapping
+            (deviceinfo['hwVendor'], deviceinfo['hwModel']) = sysoidmap.translate_sysoid(
+                deviceinfo['sysObjectID'])
+
+        except Exception, e:
+            logger.error(
+                "fn=DeviceAPI/get : %s : SNMP get of generic aspects for device failed : %s" % (devicename,
+                                                                            e))
+            return errst.status('ERROR_OP', 'SNMP get of generic aspects failed on %s, cause : %s' % (devicename, e)), 200
+
+        try:
+            # POE is picky, segregate it to avoid polluting output with errors
             logger.debug('fn=DeviceAPI/get : %s : get poe info' % devicename)
             poe_modules = []
             for poe_module in m.pethMainPseConsumptionPower:
@@ -202,22 +224,13 @@ class DeviceAPI(restful.Resource):
                     'nominal_power': m.pethMainPsePower[poe_module]
                 })
             deviceinfo['pethMainPsePower'] = poe_modules
-
-            logger.debug(
-                'fn=DeviceAPI/get : %s : get serial numbers' % devicename)
-            (max_switches, deviceinfo['entities']
-             ) = self.get_serial(m, devicename)
-            deviceinfo['cswMaxSwitchNum'] = max_switches
-
-            # sysoid mapping
-            (deviceinfo['hwVendor'], deviceinfo['hwModel']) = sysoidmap.translate_sysoid(
-                logger, deviceinfo['sysObjectID'])
+            logger.debug('fn=DeviceAPI/get : %s : poe info collection ok' % devicename)
 
         except Exception, e:
-            logger.error(
-                "fn=DeviceAPI/get : %s : SNMP get for device failed : %s" % (devicename,
-                                                                            e))
-            return errst.status('ERROR_OP', 'SNMP get failed on %s, cause : %s' % (devicename, e)), 200
+            # POE is not that important, do not generate errors for it
+            logger.info(
+                "fn=DeviceAPI/get : %s : SNMP get for POE aspects for device failed : %s" % (devicename, e))
+            # return errst.status('ERROR_OP', 'SNMP get for POE aspects failed on %s, cause : %s' % (devicename, e)), 200
 
         tend = datetime.now()
         tdiff = tend - tstart
@@ -229,41 +242,58 @@ class DeviceAPI(restful.Resource):
                     (devicename, deviceinfo['query-duration']))
         return deviceinfo
 
+
     def get_serial(self, m, devicename):
         ''' get the serial numbers using the Entity-MIB
             https://raw.github.com/vincentbernat/snimpy/master/examples/get-serial.py
+            http://kb.paessler.com/en/topic/41133-how-can-i-get-prtg-to-recognize-cisco-switches-in-stack-that-utilize-only-1-ip-address
 
             return a list of entries, as we might have a stacked switch configuration
         '''
-        # first, find out if the switch is stacked :
-        # when working, use 0 for non stack and 1 for stacks in the top-parent
-        # search below
-        max_switches = m.cswMaxSwitchNum
 
-        if max_switches is not None:
+        # first, find out if the switch is stacked :
+        # when working, use 0 for non stack and 1 for stacks in the top-parent search below
+        logger.debug("fn=DeviceAPI/get_serial : %s : count switch members" % devicename)
+        counter = 0
+
+        try:
+            # for entry in m.cswSwitchNumCurrent:
+            #    logger.debug("fn=DeviceAPI/get_serial : %s : found member %s" % (devicename, entry))
+            #    counter += 1
+            for index, value in m.cswSwitchNumCurrent.iteritems():
+                logging.debug('fn=DeviceAPI/get_serial cswSwitchNumCurrent entry %s, %s' % (index, value))
+                counter += 1
+        except snmp.SNMPException, e:
+            logger.info("fn=DeviceAPI/get_serial : %s : exception in get_serial/get-cswSwitchNumCurrent : <%s>" % (devicename, e))
+
+        if counter > 1:
             parent_search_stop_at = 1
+            logger.debug("fn=DeviceAPI/get_serial : %s : search for multiple serials within stack" % (devicename))
         else:
             parent_search_stop_at = 0
+            logger.debug("fn=DeviceAPI/get_serial : %s : search for single serial within switch" % (devicename))
 
+        # now we know where to stop, get serials
+        # can be slow for huge core switches like a 6500. Maybe we need a faster method
         hardware_info = []
-        parent = None
-        for i in m.entPhysicalContainedIn:
-            if m.entPhysicalContainedIn[i] == parent_search_stop_at:
-                parent = i
+        for index, value in m.entPhysicalContainedIn.iteritems():
+            if value == parent_search_stop_at:
                 hardware_info.append({
-                    'physicalDescr':        m.entPhysicalDescr[parent],
-                    'physicalHardwareRev':  m.entPhysicalHardwareRev[parent],
-                    'physicalFirmwareRev':  m.entPhysicalFirmwareRev[parent],
-                    'physicalSoftwareRev':  m.entPhysicalSoftwareRev[parent],
-                    'physicalSerialNum':    m.entPhysicalSerialNum[parent],
-                    'physicalName':         m.entPhysicalName[parent]
+                    'physicalDescr':        m.entPhysicalDescr[index],
+                    'physicalHardwareRev':  m.entPhysicalHardwareRev[index],
+                    'physicalFirmwareRev':  m.entPhysicalFirmwareRev[index],
+                    'physicalSoftwareRev':  m.entPhysicalSoftwareRev[index],
+                    'physicalSerialNum':    m.entPhysicalSerialNum[index],
+                    'physicalName':         m.entPhysicalName[index]
                 })
-        if parent is None:
-            logger.warn(
-                "fn=DeviceAPI/get_serial : %s : could not get an entity parent" % devicename)
-            return errst.status('ERROR_MIB_ENTITY', 'could not get an entity parent in get_serial')
+
+        # found something ?
+        if len(hardware_info) == 0:
+            logger.warn("fn=DeviceAPI/get_serial : %s : could not get an entity parent" % devicename)
+            return errst.status('ERROR_MIB_ENTITY', 'could not get any serial / an entity parent in get_serial')
         else:
-            return (max_switches, hardware_info)
+            logger.debug("fn=DeviceAPI/get_serial : %s : got %s serial(s)" % (devicename, len(hardware_info)))
+            return (counter, hardware_info)
 
 
 # -----------------------------------------------------------------------------------
@@ -380,7 +410,7 @@ class DeviceSaveAPI(restful.Resource):
 
         rw_community = credmgr.get_credentials(devicename)['rw_community']
 
-        if not check.check_snmp(logger, M, devicename, rw_community, 'RW'):
+        if not check.check_snmp(M, devicename, rw_community, 'RW'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         logger.debug(
@@ -514,7 +544,7 @@ class InterfaceAPI(restful.Resource):
                     (devicename, showmac, showvlannames, showpoe, showcdp, showdhcp))
 
         ro_community = credmgr.get_credentials(devicename)['ro_community']
-        if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
+        if not check.check_snmp(M, devicename, ro_community, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         deviceinfo = autovivification.AutoVivification()
@@ -522,8 +552,7 @@ class InterfaceAPI(restful.Resource):
 
         logger.debug(
             'fn=InterfaceAPI/get : %s : creating the snimpy manager' % devicename)
-        # FIXME : the timeout here is probably a bad idea. The summ of apps is
-        # likely to fail
+        # FIXME : the timeout here is probably a bad idea. The sum of apps is likely to fail
         m = M(host=devicename,
               community=ro_community,
               version=2,
@@ -540,7 +569,7 @@ class InterfaceAPI(restful.Resource):
             # get the mac list
             if showmac:
                 macAPI = MacAPI()
-                macs = macAPI.get_macs_from_device(devicename, m, ro_community)
+                macs, total_mac_entries = macAPI.get_macs_from_device(devicename, m, ro_community)
 
             # collect the voice vlans
             vlanAPI = vlanlistAPI()
@@ -748,7 +777,7 @@ class InterfaceCounterAPI(restful.Resource):
         tstart = datetime.now()
 
         ro_community = credmgr.get_credentials(devicename)['ro_community']
-        if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
+        if not check.check_snmp(M, devicename, ro_community, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         deviceinfo = autovivification.AutoVivification()
@@ -825,7 +854,7 @@ class MacAPI(restful.Resource):
         tstart = datetime.now()
 
         ro_community = credmgr.get_credentials(devicename)['ro_community']
-        if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
+        if not check.check_snmp(M, devicename, ro_community, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         deviceinfo = autovivification.AutoVivification()
@@ -845,7 +874,7 @@ class MacAPI(restful.Resource):
         try:
             deviceinfo['sysName'] = m.sysName
 
-            macs = self.get_macs_from_device(devicename, m, ro_community)
+            macs, total_mac_entries = self.get_macs_from_device(devicename, m, ro_community)
 
             macs_organized = []
             for ifindex in macs:
@@ -864,6 +893,7 @@ class MacAPI(restful.Resource):
         duration = (tdiff.microseconds + (tdiff.seconds +
                                           tdiff.days * 24 * 3600) * 10**6) / 1000
         deviceinfo['query-duration'] = duration
+        deviceinfo['total-mac-entries'] = total_mac_entries
 
         logger.info('fn=MacAPI/get : %s : duration=%s' %
                     (devicename, duration))
@@ -877,12 +907,13 @@ class MacAPI(restful.Resource):
         #-------------------------
         logger.debug('fn=MacAPI/get_macs_from_device : %s' % devicename)
         macs = {}
+        total_mac_entries = 0
 
         for entry in m.vtpVlanName:
             vlan_nr = entry[1]
             try:
                 logger.debug(
-                    'fn=MacAPI/get_macs_from_device vlan_nr = %s' % (vlan_nr))
+                    'fn=MacAPI/get_macs_from_device : vlan_nr = %s' % (vlan_nr))
                 vlan_type = m.vtpVlanType[entry]
                 vlan_state = m.vtpVlanState[entry]
                 vlan_name = m.vtpVlanName[entry]
@@ -941,13 +972,19 @@ class MacAPI(restful.Resource):
                         else:
                             macs[ifindex] = [mac_record]
 
+                    mac_entries = len(macs[ifindex])
+                    total_mac_entries += mac_entries
+                    logger.debug("fn=MacAPI/get_macs_from_device : %s mac entries "
+                                 "found" % mac_entries)
+
                 except:
                     logger.warn(
                         "fn=MacAPI/get_macs_from_device : failed, probably an unused VLAN (%s) on a buggy IOS producing SNMP timeout. Ignoring this VLAN" % (vlan_nr))
                     # pass
 
-        logger.debug("fn=MacAPI/get_macs_from_device : returning data")
-        return macs
+        logger.debug("fn=MacAPI/get_macs_from_device : returning data, total %s mac "
+                     "entries found" % total_mac_entries)
+        return macs, total_mac_entries
 
 
 # -----------------------------------------------------------------------------------
@@ -971,7 +1008,7 @@ class CDPAPI(restful.Resource):
         tstart = datetime.now()
 
         ro_community = credmgr.get_credentials(devicename)['ro_community']
-        if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
+        if not check.check_snmp(M, devicename, ro_community, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         deviceinfo = autovivification.AutoVivification()
@@ -1068,7 +1105,7 @@ class DHCPsnoopAPI(restful.Resource):
         tstart = datetime.now()
 
         ro_community = credmgr.get_credentials(devicename)['ro_community']
-        if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
+        if not check.check_snmp(M, devicename, ro_community, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         deviceinfo = autovivification.AutoVivification()
@@ -1211,7 +1248,7 @@ class vlanlistAPI(restful.Resource):
         tstart = datetime.now()
 
         ro_community = credmgr.get_credentials(devicename)['ro_community']
-        if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
+        if not check.check_snmp(M, devicename, ro_community, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         deviceinfo = autovivification.AutoVivification()
@@ -1284,10 +1321,15 @@ class vlanlistAPI(restful.Resource):
         logger.debug(
             'fn=vlanlistAPI/get_voice_vlans : %s : get voice vlan list' % devicename)
         voice_vlans = {}
-        for index in m.vmVoiceVlanId:
-            logger.debug(
-                'fn=vlanlistAPI/get_voice_vlans : %s : get voice vlan info for index %s' % (devicename, index))
-            voice_vlans[index] = str(m.vmVoiceVlanId[index])
+        # some routers (Cisco 1921) return empty list, producing an error upstream.
+        # Catch it and return an empty list
+        try:
+            for index in m.vmVoiceVlanId:
+                logger.debug(
+                    'fn=vlanlistAPI/get_voice_vlans : %s : get voice vlan info for index %s' % (devicename, index))
+                voice_vlans[index] = str(m.vmVoiceVlanId[index])
+        except Exception, e:
+            logger.info("fn=vlanlistAPI/get_voice_vlans : %s : SNMP get failed : %s" % (devicename, e))
 
         return voice_vlans
 
@@ -1328,7 +1370,7 @@ class PortToVlanAPI(restful.Resource):
         tstart = datetime.now()
 
         rw_community = credmgr.get_credentials(devicename)['rw_community']
-        if not check.check_snmp(logger, M, devicename, rw_community, 'RW'):
+        if not check.check_snmp(M, devicename, rw_community, 'RW'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         logger.debug(
@@ -1405,7 +1447,7 @@ class InterfaceConfigAPI(restful.Resource):
         tstart = datetime.now()
 
         rw_community = credmgr.get_credentials(devicename)['rw_community']
-        if not check.check_snmp(logger, M, devicename, rw_community, 'RW'):
+        if not check.check_snmp(M, devicename, rw_community, 'RW'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         logger.debug(
@@ -1467,7 +1509,7 @@ class OIDpumpAPI(restful.Resource):
         tstart = datetime.now()
 
         ro_community = credmgr.get_credentials(devicename)['ro_community']
-        if not check.check_snmp(logger, M, devicename, ro_community, 'RO'):
+        if not check.check_snmp(M, devicename, ro_community, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         deviceinfo = autovivification.AutoVivification()
@@ -1527,7 +1569,7 @@ class OIDpumpAPI(restful.Resource):
 class DeviceSshAPI(restful.Resource):
     __doc__ = '''{
         "name": "DeviceSshAPI",
-        "description": "PUT on a device : run commands over ssh",
+        "description": "PUT on a device : run commands over ssh. Do NOT terminate your command list with logout/exit/etc.",
         "auth": true,
         "auth-type": "BasicAuth",
         "params": ["driver=ios", "CmdList=list (JSON ordered list)", "uuid=UUID (optional, used to identify the write request in logs)"],
@@ -1564,6 +1606,10 @@ class DeviceSshAPI(restful.Resource):
         logger.info('fn=DeviceSshAPI/put : %s : commands=%s, uuid=%s' %
                     (devicename, cmdlist, uuid))
 
+        # we need the credentials from outside
+        credentials = credmgr.get_credentials(devicename)
+
+
         tstart = datetime.now()
 
         # WSGI does not accept playing with stdin and stdout. Save them before
@@ -1572,8 +1618,13 @@ class DeviceSshAPI(restful.Resource):
         save_stdin = sys.stdin
         sys.stdout = sys.stderr
         sys.stdin = ''
-        (status, output_global, output_indexed) = commander.run_by_ssh(
-            devicename, app.config['SSH_USER'], app.config['SSH_PASSWORD'], driver, cmdlist)
+        (status, output_global, output_indexed) = \
+            commander.run_by_ssh(
+                devicename,
+                credentials['username'],
+                credentials['password'],
+                driver,
+                cmdlist)
         sys.stdout = save_stdout
         sys.stdin = save_stdin
 
@@ -1642,7 +1693,7 @@ hdlr = logging.handlers.RotatingFileHandler(log_file,
                                             maxBytes=app.config['LOG_MAX_SIZE'],
                                             backupCount=app.config['LOG_BACKUP_COUNT'])
 # we have the PID in each log entry to differentiate parallel processes writing to the log
-FORMAT = "%(asctime)s - %(process)d - %(name)-16s - %(levelname)-5s - %(" \
+FORMAT = "%(asctime)s - %(process)d - %(name)-16s - %(levelname)-7s - %(" \
          "message)s"
 formatter = logging.Formatter(FORMAT)
 hdlr.setFormatter(formatter)
@@ -1654,10 +1705,13 @@ if app.config['DEBUG']:
 else:
     logger.setLevel(logging.INFO)
 
+logger.info('version : <%s>' % __version__)
 logger.info('environment : <%s>' % app.config['ENVI'])
 mandate_uuid = app.config['MANDATE_UUID']
 logger.info('mandate_uuid : <%s>' % mandate_uuid)
 logger.info('SNMP cache = %ss' % app.config['SNMP_CACHE'])
+logger.info('SNMP timeout = %ss' % app.config['SNMP_TIMEOUT'])
+logger.info('SNMP retries = %ss' % app.config['SNMP_RETRIES'])
 
 
 # -----------------------------------------------------------------------------------
@@ -1777,7 +1831,7 @@ errst = error_handling.Errors()
 sysoidmap = sysoidan.SysOidAn(logger, app.root_path)
 
 # for SSH commands
-commander = sshcmd.SshCmd()
+commander = sshcmd.SshCmd(logger)
 
 
 # -----------------------------------------------------------------------------------

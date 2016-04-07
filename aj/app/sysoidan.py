@@ -48,7 +48,7 @@ class SysOidAn():
             self.ciscoProducts[oid] = str(entry)
         self.logger.debug('fn=SysOidAn/init : done loading Cisco product MIB')
 
-    def translate_sysoid(self, logger, sysoid):
+    def translate_sysoid(self, sysoid):
         '''
         translate sysOid to vendor and model
         this is currently only implement for Cisco, but other vendors might be added

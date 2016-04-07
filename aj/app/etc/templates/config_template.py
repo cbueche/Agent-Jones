@@ -39,6 +39,10 @@ class Config(object):
     SNMP_TIMEOUT_LONG = 30
     SNMP_RETRIES_NONE = 0
 
+    # SNMP cache for snimpy [seconds]
+    SNMP_CACHE = 20
+    # SNMP_CACHE = False
+
     # how do we use ping on this platform
     sysname = os.uname()[0]
     if sysname == 'Linux':    # ok for at least Ubuntu and CentOS
