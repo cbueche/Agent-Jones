@@ -559,6 +559,7 @@ class InterfaceAPI(restful.Resource):
               timeout=app.config['SNMP_TIMEOUT'],
               retries=app.config['SNMP_RETRIES'],
               cache=app.config['SNMP_CACHE'],
+              bulk=True,
               none=True)
 
         # all SNMP gets under one big try
@@ -731,25 +732,31 @@ class InterfaceAPI(restful.Resource):
                          (devicename, entry, port_mapping[entry]))
 
         # then, get the poe info. Returned entries are indexed by the port-name
-        logger.debug('fn=InterfaceAPI/get_poe : %s : get poe info' %
-                     (devicename))
+        logger.debug('fn=InterfaceAPI/get_poe : %s : get poe info' % (devicename))
         poe = {}
         # some switches cannot do any POE and answer with "End of MIB was reached"
         # and some clients might ask for POE for those even if the get-device API call
         # said "no POE". In this case, only log and return an empty table
         try:
+            poe_entries = 0
             for entry in m.cpeExtPsePortPwrConsumption:
                 entry_status = m.pethPsePortDetectionStatus[entry]
                 entry_power = m.cpeExtPsePortPwrConsumption[entry]
                 entry_idx = m.cpeExtPsePortEntPhyIndex[entry]
-                entry_port_name = port_mapping[entry_idx]
+                # entries in poe list without a port
+                if entry_idx in port_mapping:
+                    entry_port_name = port_mapping[entry_idx]
+                else:
+                    entry_port_name = entry_idx
                 logger.debug('fn=InterfaceAPI/get_poe : %s : status=%s, power=%s, ent-idx=%s, port-name=%s' %
                              (devicename, entry_status, entry_power, entry_idx, entry_port_name))
-                poe[entry_port_name] = {
-                    'status': entry_status, 'power': entry_power}
+                poe[entry_port_name] = {'status': entry_status, 'power': entry_power}
+                poe_entries += 1
+
+            logger.info('fn=InterfaceAPI/get_poe : %s : got %s poe entries' % (devicename, poe_entries))
 
         except Exception, e:
-            logger.debug(
+            logger.info(
                 "fn=InterfaceAPI/get_poe : %s : could not get poe info, probably a device without POE. Status : %s" % (devicename, e))
 
         return poe
