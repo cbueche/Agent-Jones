@@ -1,6 +1,11 @@
 Release notes
 =============
 
+12.4.2016
+---------
+
+- add ARP collection with /aj/api/v1/arp/device.name
+
 
 6.4.2016
 ---------

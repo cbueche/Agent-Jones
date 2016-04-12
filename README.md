@@ -24,10 +24,11 @@ Features
 - Get the voice-vlan for an interface.
 - GET interfaces from a device. Option to list the MAC addresses of devices connected to each port.
 - Configure an interface : adminStatus and ifAlias (called description in Cisco language).
-- List the connected MAC addresses : MAC(ethernet) to port mappings from a device.
+- List the connected MAC addresses : MAC (ethernet) to port mappings from a device.
 - CDP information for each port.
 - Get DHCP snooping information
 - Get the interface counters of one interface.
+- Get the ARP table (MAC to IP).
 - SNMP get or walk on a OID
 - Run commands over SSH
 

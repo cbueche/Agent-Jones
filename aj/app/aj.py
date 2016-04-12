@@ -17,7 +17,7 @@ Repository & documentation : https://github.com/cbueche/Agent-Jones
 # -----------------------------------------------------------------------------------
 
 # update doc/RELEASES.md when touching this
-__version__ = '6.4.2016'
+__version__ = '12.4.2016'
 
 from flask import Flask, url_for, make_response, jsonify, send_from_directory, request
 from flask import render_template
@@ -120,6 +120,9 @@ load(mib_path + "TOKEN-RING-RMON-MIB.my")
 load(mib_path + "RMON2-MIB.my")
 load(mib_path + "Q-BRIDGE.my")
 load(mib_path + "CISCO-DHCP-SNOOPING-MIB.my")
+
+# ARP
+load(mib_path + "IP-MIB.my")
 
 
 # -----------------------------------------------------------------------------------
@@ -985,9 +988,8 @@ class MacAPI(restful.Resource):
                                  "found" % mac_entries)
 
                 except:
-                    logger.warn(
+                    logger.info(
                         "fn=MacAPI/get_macs_from_device : failed, probably an unused VLAN (%s) on a buggy IOS producing SNMP timeout. Ignoring this VLAN" % (vlan_nr))
-                    # pass
 
         logger.debug("fn=MacAPI/get_macs_from_device : returning data, total %s mac "
                      "entries found" % total_mac_entries)
@@ -1092,6 +1094,126 @@ class CDPAPI(restful.Resource):
 
 
 # -----------------------------------------------------------------------------------
+# GET ARP info from a device
+# -----------------------------------------------------------------------------------
+class ARPAPI(restful.Resource):
+    __doc__ = '''{
+        "name": "ARPAPI",
+        "description": "GET ARP info from a device (MAC to IP)",
+        "auth": true,
+        "auth-type": "BasicAuth",
+        "params": [],
+        "returns": "A list of entries."
+    }'''
+    decorators = [auth.login_required]
+
+    def get(self, devicename):
+        # -------------------------
+        logger.debug('fn=ARPAPI/get : src=%s, %s' % (request.remote_addr, devicename))
+
+        tstart = datetime.now()
+
+        ro_community = credmgr.get_credentials(devicename)['ro_community']
+        if not check.check_snmp(M, devicename, ro_community, 'RO'):
+            return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
+
+        deviceinfo = autovivification.AutoVivification()
+        deviceinfo['name'] = devicename
+
+        logger.debug('fn=ARPAPI/get : %s : creating the snimpy manager' % devicename)
+        m = M(host=devicename,
+              community=ro_community,
+              version=2,
+              timeout=app.config['SNMP_TIMEOUT'],
+              retries=app.config['SNMP_RETRIES'],
+              cache=app.config['SNMP_CACHE'],
+              bulk=True,
+              none=True)
+
+        try:
+            deviceinfo['sysName'] = m.sysName
+            oid_used, nbr_arp_entries, arps = self.get_arp_from_device(devicename, m, ro_community)
+
+        except snmp.SNMPException, e:
+            logger.error("fn=ARPAPI/get : %s : SNMP get failed : %s" % (devicename, e))
+            return errst.status('ERROR_OP', 'SNMP get failed on %s, cause : %s' % (devicename, e)), 200
+
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds +
+                                          tdiff.days * 24 * 3600) * 10 ** 6) / 1000
+        deviceinfo['query-duration'] = duration
+
+        logger.info('fn=ARPAPI/get : %s : duration=%s' % (devicename, duration))
+        deviceinfo['arp'] = arps
+        deviceinfo['arp_nbr_entries'] = nbr_arp_entries
+        deviceinfo['oid_used'] = oid_used
+        return deviceinfo
+
+    # the real collection stuff
+    def get_arp_from_device(self, devicename, m, ro_community):
+
+        nbr_of_entries = 0
+        logger.debug('fn=ARPAPI/get_arp_from_device : %s : trying current OID' % devicename)
+        try:
+            i = 0
+            oid_used = 'ipNetToPhysicalPhysAddress (current)'
+            arps = []
+            for index, value in m.ipNetToPhysicalPhysAddress.iteritems():
+                ipNetToPhysicalIfIndex, ipNetToPhysicalNetAddressType, ipNetToPhysicalNetAddress = index
+                entry = {}
+                entry['ifindex'] = ipNetToPhysicalIfIndex
+                entry['mac'] = str(netaddr.EUI(str(value)))
+                entry['ip'] = util.convert_ip_from_snmp_format(ipNetToPhysicalNetAddressType, ipNetToPhysicalNetAddress)
+                arps.append(entry)
+                i += 1
+
+            nbr_of_entries = i
+            logger.info("fn=ARPAPI/get_arp_from_device : %s : got %s ARP entries" % (devicename, nbr_of_entries))
+
+        except snmp.SNMPException, e:
+            if str(e) == 'no more stuff after this OID':
+                logger.info('fn=ARPAPI/get_arp_from_device : %s : empty results, probably unsupported OID: %s' % (devicename, e))
+            else:
+                logger.warn('fn=ARPAPI/get_arp_from_device : %s : %s' % (devicename, e))
+
+        # success, do not try deprecated MIB/OID below
+        if nbr_of_entries > 0:
+            logger.debug(
+                "fn=ARPAPI/get_arp_from_device : %s : returning %s ARP entries gathered using %s" % (
+                devicename, nbr_of_entries, oid_used))
+            return oid_used, nbr_of_entries, arps
+
+        # continue with deprecated MIB/OID
+        logger.debug('fn=ARPAPI/get_arp_from_device %s retry using deprecated OID (ipNetToMediaPhysAddress)' % devicename)
+        try:
+            i = 0
+            oid_used = 'ipNetToMediaPhysAddress (deprecated)'
+            for index, value in m.ipNetToMediaPhysAddress.iteritems():
+                ipNetToMediaIfIndex, ipNetToMediaNetAddress = index
+                entry = {}
+                entry['ifindex'] = ipNetToMediaIfIndex
+                entry['mac'] = str(netaddr.EUI(netaddr.strategy.eui48.packed_to_int(value)))
+                entry['ip'] = str(ipNetToMediaNetAddress)
+                arps.append(entry)
+                i += 1
+
+            nbr_of_entries = i
+            logger.info("fn=ARPAPI/get_arp_from_device : %s : got %s ARP entries" % (devicename, nbr_of_entries))
+
+        except snmp.SNMPException, e:
+            logger.warn('fn=ARPAPI/get_arp_from_device : %s : %s' % (devicename, e))
+
+        # possible enhancement: if both ipNetToPhysicalPhysAddress and ipNetToMediaPhysAddress
+        # bring empty results, 1.3.6.1.2.1.3.1 (RFC1213-MIB) might do the job.
+
+        logger.debug(
+            "fn=ARPAPI/get_arp_from_device : %s : returning %s ARP entries gathered using %s" % (
+            devicename, nbr_of_entries, oid_used))
+        return oid_used, nbr_of_entries, arps
+
+
+# -----------------------------------------------------------------------------------
 # GET DHCP snooping info from a device
 # -----------------------------------------------------------------------------------
 class DHCPsnoopAPI(restful.Resource):
@@ -1127,7 +1249,6 @@ class DHCPsnoopAPI(restful.Resource):
               retries=app.config['SNMP_RETRIES'],
               cache=app.config['SNMP_CACHE'],
               none=True)
-
 
         try:
             deviceinfo['sysName'] = m.sysName
@@ -1193,8 +1314,7 @@ class DHCPsnoopAPI(restful.Resource):
                     vendor = 'unknown'
                 address_type = inet_address_types.get(
                     m.cdsBindingsAddrType[entry], 'unsupported')
-                ip = self.convert_ip_from_snmp_format(
-                    address_type, m.cdsBindingsIpAddress[entry])
+                ip = util.convert_ip_from_snmp_format(address_type, m.cdsBindingsIpAddress[entry])
                 interface_idx = m.cdsBindingsInterface[entry]
                 leased_time = m.cdsBindingsLeasedTime[entry]
                 status = binding_status.get(
@@ -1221,17 +1341,6 @@ class DHCPsnoopAPI(restful.Resource):
         logger.debug(
             "fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : returning data")
         return dhcp_snooping_entries
-
-    def convert_ip_from_snmp_format(self, address_type, ip_address):
-
-        if address_type in ('ipv4', 'ipv4z'):
-            return socket.inet_ntoa(ip_address)
-        elif address_type in ('ipv6', 'ipv6z'):
-            return socket.inet_ntop(AF_INET6, ip_address)
-        elif address_type == 'dns':
-            return ip_address
-        else:
-            return 'IP conversion not yet supported for type %s, ip %s' % (address_type, ip_address)
 
 
 # -----------------------------------------------------------------------------------
@@ -1803,6 +1912,12 @@ api.add_resource(CDPAPI,
 doc.add(loads(CDPAPI.__doc__),
         '/aj/api/v1/cdp/<string:devicename>',
         CDPAPI.__dict__['methods'])
+
+api.add_resource(ARPAPI,
+                 '/aj/api/v1/arp/<string:devicename>')
+doc.add(loads(ARPAPI.__doc__),
+        '/aj/api/v1/arp/<string:devicename>',
+        ARPAPI.__dict__['methods'])
 
 
 # -----------------------------------------------------------------------------------
