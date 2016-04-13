@@ -3,7 +3,6 @@
 autovivification.py - direct deep dict keys creation
 '''
 
-# ----
 
 # -----------------------------------------------------------------------------------
 class AutoVivification(dict):
@@ -24,5 +23,3 @@ class AutoVivification(dict):
         except KeyError:
             value = self[item] = type(self)()
             return value
-
-

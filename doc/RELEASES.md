@@ -1,6 +1,23 @@
 Release notes
 =============
 
+13.4.2016
+---------
+
+- add ARP collection with /aj/api/v1/arp/device.name
+- fix get_serial for devices without Entity-MIB support
+
+
+6.4.2016
+---------
+
+- add DHCP snoop collection on each port with /aj/api/v1/interfaces/device.name?showdhcp=1
+- fix ssh credential request
+- be tolerant with Cisco POE pretending to be present but being in fact absent
+- updated CISCO-PRODUCTS-MIB
+- enhanced logging
+- enhance serial-# detection for old IOS versions and stacks
+
 
 5.5.2015
 --------

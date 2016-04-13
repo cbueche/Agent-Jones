@@ -5,7 +5,7 @@ Agent-Jones is a web-service used to configure and retrieve info from Cisco devi
 Mostly switches, but it could as well be used for routers. Its goal is to serve as a back-end
 for nice GUIs and collectors applications. As such, it doesn't have any GUI.
 
-The wholestuff is written in Python, using the [Flask](http://flask.pocoo.org/) micro-framework, and a very nice SNMP lib for Python called snimpy [1](http://vincent.bernat.im/en/blog/2013-snimpy.html), [2](https://github.com/vincentbernat/snimpy).
+The whole stuff is written in Python, using the [Flask](http://flask.pocoo.org/) micro-framework, and a very nice SNMP lib for Python called snimpy [1](http://vincent.bernat.im/en/blog/2013-snimpy.html), [2](https://github.com/vincentbernat/snimpy).
 
 
 Status
@@ -24,9 +24,11 @@ Features
 - Get the voice-vlan for an interface.
 - GET interfaces from a device. Option to list the MAC addresses of devices connected to each port.
 - Configure an interface : adminStatus and ifAlias (called description in Cisco language).
-- List the connected MAC addresses : MAC(ethernet) to port mappings from a device.
+- List the connected MAC addresses : MAC (ethernet) to port mappings from a device.
 - CDP information for each port.
+- Get DHCP snooping information
 - Get the interface counters of one interface.
+- Get the ARP table (MAC to IP).
 - SNMP get or walk on a OID
 - Run commands over SSH
 

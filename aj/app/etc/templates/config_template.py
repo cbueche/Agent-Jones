@@ -5,6 +5,7 @@
 # rename to config.py to use
 #
 
+import os
 
 # default values
 class Config(object):
@@ -38,6 +39,10 @@ class Config(object):
     # timeout for VLAN-based SNMP get (used eg in getMAC())
     SNMP_TIMEOUT_LONG = 30
     SNMP_RETRIES_NONE = 0
+
+    # SNMP cache for snimpy [seconds]
+    SNMP_CACHE = 20
+    # SNMP_CACHE = False
 
     # how do we use ping on this platform
     sysname = os.uname()[0]

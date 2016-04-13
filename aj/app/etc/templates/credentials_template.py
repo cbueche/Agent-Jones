@@ -28,6 +28,7 @@ class Credentials():
         return {
             'ro_community': 'public',
             'rw_community': 'private',
-            'username':     'switch_user',
-            'password':     'switch_password'
+            'username': 'switch_user',
+            'password': 'switch_password',
+            'password_enable': 'switch_password_enable'
         }
