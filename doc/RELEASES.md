@@ -1,10 +1,11 @@
 Release notes
 =============
 
-12.4.2016
+13.4.2016
 ---------
 
 - add ARP collection with /aj/api/v1/arp/device.name
+- fix get_serial for devices without Entity-MIB support
 
 
 6.4.2016

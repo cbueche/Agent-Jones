@@ -5,6 +5,7 @@
 # rename to config.py to use
 #
 
+import os
 
 # default values
 class Config(object):

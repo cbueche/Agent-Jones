@@ -17,7 +17,7 @@ Repository & documentation : https://github.com/cbueche/Agent-Jones
 # -----------------------------------------------------------------------------------
 
 # update doc/RELEASES.md when touching this
-__version__ = '12.4.2016'
+__version__ = '13.4.2016'
 
 from flask import Flask, url_for, make_response, jsonify, send_from_directory, request
 from flask import render_template
@@ -131,7 +131,6 @@ load(mib_path + "IP-MIB.my")
 class DocCollection():
 
     apidoc = autovivification.AutoVivification()
-    apidoc['AJ_version'] = __version__
 
     def add(self, stanza, uri, methods):
 
@@ -185,7 +184,7 @@ class DeviceAPI(restful.Resource):
               bulk=False,
               none=True)
 
-        # generic SNMP stuff under one large attempt
+        # generic SNMP stuff
         try:
 
             # generic device stuff
@@ -278,25 +277,29 @@ class DeviceAPI(restful.Resource):
 
         # now we know where to stop, get serials
         # can be slow for huge core switches like a 6500. Maybe we need a faster method
-        hardware_info = []
-        for index, value in m.entPhysicalContainedIn.iteritems():
-            if value == parent_search_stop_at:
-                hardware_info.append({
-                    'physicalDescr':        m.entPhysicalDescr[index],
-                    'physicalHardwareRev':  m.entPhysicalHardwareRev[index],
-                    'physicalFirmwareRev':  m.entPhysicalFirmwareRev[index],
-                    'physicalSoftwareRev':  m.entPhysicalSoftwareRev[index],
-                    'physicalSerialNum':    m.entPhysicalSerialNum[index],
-                    'physicalName':         m.entPhysicalName[index]
-                })
+        # some very old Cisco switches have no support for the Entity-MIB
+        try:
+            hardware_info = []
+            for index, value in m.entPhysicalContainedIn.iteritems():
+                if value == parent_search_stop_at:
+                    hardware_info.append({
+                        'physicalDescr':        m.entPhysicalDescr[index],
+                        'physicalHardwareRev':  m.entPhysicalHardwareRev[index],
+                        'physicalFirmwareRev':  m.entPhysicalFirmwareRev[index],
+                        'physicalSoftwareRev':  m.entPhysicalSoftwareRev[index],
+                        'physicalSerialNum':    m.entPhysicalSerialNum[index],
+                        'physicalName':         m.entPhysicalName[index]
+                    })
+        except snmp.SNMPException, e:
+            logger.info("fn=DeviceAPI/get_serial : %s : exception in get_serial/get-entPhysicalContainedIn : <%s>" % (devicename, e))
 
         # found something ?
         if len(hardware_info) == 0:
             logger.warn("fn=DeviceAPI/get_serial : %s : could not get an entity parent" % devicename)
-            return errst.status('ERROR_MIB_ENTITY', 'could not get any serial / an entity parent in get_serial')
         else:
             logger.debug("fn=DeviceAPI/get_serial : %s : got %s serial(s)" % (devicename, len(hardware_info)))
-            return (counter, hardware_info)
+
+        return (counter, hardware_info)
 
 
 # -----------------------------------------------------------------------------------
@@ -929,7 +932,7 @@ class MacAPI(restful.Resource):
                 vlan_name = m.vtpVlanName[entry]
             except:
                 logger.warn(
-                    "fn=MacAPI/get_macs_from_device : failed to get vlan detail infos. Skip to next vlan")
+                    "fn=MacAPI/get_macs_from_device %s : failed to get vlan detail infos. Skip to next vlan" % devicename)
                 continue
 
             # only ethernet VLANs
@@ -1321,8 +1324,8 @@ class DHCPsnoopAPI(restful.Resource):
                     m.cdsBindingsStatus[entry], 'unsupported')
                 hostname = m.cdsBindingsHostname[entry]
 
-                logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : vlan=%s, mac=%s, vendor=%s, address_type=%s, ip=%s, interface_idx=%s, leased_time=%s, status=%s, hostname=%s' %
-                             (vlan, mac_f, vendor, address_type, ip, interface_idx, leased_time, status, hostname))
+                logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device %s : vlan=%s, mac=%s, vendor=%s, address_type=%s, ip=%s, interface_idx=%s, leased_time=%s, status=%s, hostname=%s' %
+                             (devicename, vlan, mac_f, vendor, address_type, ip, interface_idx, leased_time, status, hostname))
                 dhcp_entry = {'interface_idx': interface_idx,
                               'vlan': vlan,
                               'mac': mac_f,
