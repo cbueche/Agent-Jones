@@ -1998,11 +1998,15 @@ if False:
     from werkzeug.contrib.profiler import ProfilerMiddleware
     app.config['PROFILE'] = True
     app.wsgi_app = ProfilerMiddleware(app.wsgi_app, restrictions=[30])
-    app.run(host='0.0.0.0', debug=True)
+    app.run(host=app.config['BIND_IP'],
+            port=app.config['BIND_PORT'],
+            debug=app.config['DEBUG'])
 
 # normal run
 if True:
     if __name__ == '__main__':
         logger.info('AJ start')
-        app.run(host='0.0.0.0', debug=True)
+        app.run(host=app.config['BIND_IP'],
+                port=app.config['BIND_PORT'],
+                debug=app.config['DEBUG'])
         logger.info('AJ end')

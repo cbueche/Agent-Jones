@@ -44,6 +44,10 @@ class Config(object):
     SNMP_CACHE = 20
     # SNMP_CACHE = False
 
+    # IP we listen to. 0.0.0.0 will listen to all interfaces
+    BIND_IP = '192.168.7.6'
+    BIND_PORT = 80
+
     # how do we use ping on this platform
     sysname = os.uname()[0]
     if sysname == 'Linux':    # ok for at least Ubuntu and CentOS
@@ -64,7 +68,6 @@ class ProductionConfig(Config):
 
 # values for int
 class IntegrationConfig(Config):
-    DEBUG = True
     ENVI = 'integration'
 
 
@@ -72,4 +75,5 @@ class IntegrationConfig(Config):
 class DevelopmentConfig(Config):
     DEBUG = True
     ENVI = 'development'
+    BIND_PORT = 5000
 
