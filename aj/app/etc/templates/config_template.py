@@ -21,10 +21,6 @@ class Config(object):
     # if True, PUT and POST requests will need to contain a uuid parameter
     MANDATE_UUID = True
 
-    # those are used by the DeviceSshAPI call
-    SSH_USER = 'ssh-user'
-    SSH_PASSWORD = 'ssh-password'
-
     # how we do log. This would be a rotation of 10 files of 1 Mb in size
     LOG_MAX_SIZE = 1000000
     LOG_BACKUP_COUNT = 10
