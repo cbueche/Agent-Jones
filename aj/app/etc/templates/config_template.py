@@ -21,10 +21,6 @@ class Config(object):
     # if True, PUT and POST requests will need to contain a uuid parameter
     MANDATE_UUID = True
 
-    # those are used by the DeviceSshAPI call
-    SSH_USER = 'ssh-user'
-    SSH_PASSWORD = 'ssh-password'
-
     # how we do log. This would be a rotation of 10 files of 1 Mb in size
     LOG_MAX_SIZE = 1000000
     LOG_BACKUP_COUNT = 10
@@ -43,6 +39,10 @@ class Config(object):
     # SNMP cache for snimpy [seconds]
     SNMP_CACHE = 20
     # SNMP_CACHE = False
+
+    # IP we listen to. 0.0.0.0 will listen to all interfaces
+    BIND_IP = '192.168.7.6'
+    BIND_PORT = 80
 
     # how do we use ping on this platform
     sysname = os.uname()[0]
@@ -64,7 +64,6 @@ class ProductionConfig(Config):
 
 # values for int
 class IntegrationConfig(Config):
-    DEBUG = True
     ENVI = 'integration'
 
 
@@ -72,4 +71,5 @@ class IntegrationConfig(Config):
 class DevelopmentConfig(Config):
     DEBUG = True
     ENVI = 'development'
+    BIND_PORT = 5000
 

@@ -1,6 +1,14 @@
 Release notes
 =============
 
+
+15.4.2016
+---------
+
+- add trunk collection with /aj/api/v1/trunk/device.name
+- get the same info attached to each interface with /aj/api/v1/interfaces/device.name?showtrunks=1 
+
+
 13.4.2016
 ---------
 

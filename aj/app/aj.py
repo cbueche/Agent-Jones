@@ -17,7 +17,7 @@ Repository & documentation : https://github.com/cbueche/Agent-Jones
 # -----------------------------------------------------------------------------------
 
 # update doc/RELEASES.md when touching this
-__version__ = '13.4.2016'
+__version__ = '15.4.2016'
 
 from flask import Flask, url_for, make_response, jsonify, send_from_directory, request
 from flask import render_template
@@ -529,6 +529,8 @@ class InterfaceAPI(restful.Resource):
                                    help='showcdp=0|1. Provide the CDP information for each port.')
         self.reqparse.add_argument('showdhcp', default=0, type=int, required=False,
                                    help='showdhcp=0|1. Provide the DHCP snooped information for each port.')
+        self.reqparse.add_argument('showtrunks', default=0, type=int, required=False,
+                                   help='showtrunks=0|1. Provide the trunk information for each port.')
         super(InterfaceAPI, self).__init__()
 
     def get(self, devicename):
@@ -546,8 +548,9 @@ class InterfaceAPI(restful.Resource):
         showpoe = True if args['showpoe'] else False
         showcdp = True if args['showcdp'] else False
         showdhcp = True if args['showdhcp'] else False
-        logger.info('fn=InterfaceAPI/get : %s : showmac=%s, showvlannames=%s, showpoe=%s, showcdp=%s, showdhcp=%s' %
-                    (devicename, showmac, showvlannames, showpoe, showcdp, showdhcp))
+        showtrunks = True if args['showtrunks'] else False
+        logger.info('fn=InterfaceAPI/get : %s : showmac=%s, showvlannames=%s, showpoe=%s, showcdp=%s, showdhcp=%s, showtrunks=%s' %
+                    (devicename, showmac, showvlannames, showpoe, showcdp, showdhcp, showtrunks))
 
         ro_community = credmgr.get_credentials(devicename)['ro_community']
         if not check.check_snmp(M, devicename, ro_community, 'RO'):
@@ -596,6 +599,10 @@ class InterfaceAPI(restful.Resource):
                 dhcpAPI = DHCPsnoopAPI()
                 dhcp_snooping_entries = dhcpAPI.get_dhcp_snooping_from_device(
                     devicename, m, ro_community)
+
+            if showtrunks:
+                trunkAPI = TrunkAPI()
+                trunks_entries = trunkAPI.get_trunks_from_device(devicename, m, ro_community)
 
             logger.debug(
                 'fn=InterfaceAPI/get : %s : get interface info' % devicename)
@@ -696,6 +703,15 @@ class InterfaceAPI(restful.Resource):
                                 # redundant here
                                 del entry['interface_idx']
                                 interface['dhcpsnoop'].append(entry)
+
+                # Trunks
+                if showtrunks:
+                    if index in trunks_entries:
+                        interface['trunkAdminState'] = trunks_entries[index]['trunkAdminState']
+                        interface['trunkOperState'] = trunks_entries[index]['trunkOperState']
+                    else:
+                        interface['trunkAdminState'] = ''
+                        interface['trunkOperState'] = ''
 
                 # all infos are added to this interface, add it to the final
                 # list
@@ -1094,6 +1110,87 @@ class CDPAPI(restful.Resource):
 
         logger.debug("fn=CDPAPI/get_cdp_from_device : returning data")
         return cdps
+
+
+# -----------------------------------------------------------------------------------
+# GET interface trunk info from a device
+# -----------------------------------------------------------------------------------
+class TrunkAPI(restful.Resource):
+    __doc__ = '''{
+        "name": "TrunkAPI",
+        "description": "GET interface Trunk info from a device",
+        "auth": true,
+        "auth-type": "BasicAuth",
+        "params": [],
+        "returns": "A list of info indexed by ifIndex."
+    }'''
+    decorators = [auth.login_required]
+
+    def get(self, devicename):
+        #-------------------------
+        logger.debug('fn=TrunkAPI/get : src=%s, %s' % (request.remote_addr, devicename))
+
+        tstart = datetime.now()
+
+        ro_community = credmgr.get_credentials(devicename)['ro_community']
+        if not check.check_snmp(M, devicename, ro_community, 'RO'):
+            return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
+
+        deviceinfo = autovivification.AutoVivification()
+        deviceinfo['name'] = devicename
+
+        logger.debug(
+            'fn=TrunkAPI/get : %s : creating the snimpy manager' % devicename)
+        m = M(host=devicename,
+              community=ro_community,
+              version=2,
+              timeout=app.config['SNMP_TIMEOUT'],
+              retries=app.config['SNMP_RETRIES'],
+              cache=app.config['SNMP_CACHE'],
+              none=True)
+
+        try:
+            deviceinfo['sysName'] = m.sysName
+
+            trunks = self.get_trunks_from_device(devicename, m, ro_community)
+
+        except snmp.SNMPException, e:
+            logger.error("fn=TrunkAPI/get : %s : SNMP get failed : %s" %
+                         (devicename, e))
+            return errst.status('ERROR_OP', 'SNMP get failed on %s, cause : %s' % (devicename, e)), 200
+
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds +
+                                          tdiff.days * 24 * 3600) * 10**6) / 1000
+        deviceinfo['query-duration'] = duration
+
+        logger.info('fn=TrunkAPI/get : %s : duration=%s' % (devicename, duration))
+        deviceinfo['trunks'] = trunks
+        return deviceinfo
+
+    # we create a dict indexed by ifIndex,
+    # it's then easier when having to enrich an interface info
+    def get_trunks_from_device(self, devicename, m, ro_community):
+
+        logger.debug('fn=TrunkAPI/get_trunks_from_device : %s' % devicename)
+
+        trunks = autovivification.AutoVivification()
+        try:
+
+            for index, value in m.vlanTrunkPortDynamicState.iteritems():
+                logger.debug("fn=TrunkAPI/get_trunks_from_device/1 : trunk : %s, %s" % (index, value))
+                trunks[index]['trunkAdminState'] = str(value)
+
+            for index, value in m.vlanTrunkPortDynamicStatus.iteritems():
+                logger.debug("fn=TrunkAPI/get_trunks_from_device/2 : trunk : %s, %s" % (index, value))
+                trunks[index]['trunkOperState'] = str(value)
+
+        except snmp.SNMPException, e:
+            logger.warn("fn=TrunkAPI/get_trunks_from_device : failed SNMP get for Trunks : %s" % e)
+
+        logger.debug("fn=TrunkAPI/get_trunks_from_device : returning data")
+        return trunks
 
 
 # -----------------------------------------------------------------------------------
@@ -1916,6 +2013,12 @@ doc.add(loads(CDPAPI.__doc__),
         '/aj/api/v1/cdp/<string:devicename>',
         CDPAPI.__dict__['methods'])
 
+api.add_resource(TrunkAPI,
+                 '/aj/api/v1/trunk/<string:devicename>')
+doc.add(loads(TrunkAPI.__doc__),
+        '/aj/api/v1/trunk/<string:devicename>',
+        TrunkAPI.__dict__['methods'])
+
 api.add_resource(ARPAPI,
                  '/aj/api/v1/arp/<string:devicename>')
 doc.add(loads(ARPAPI.__doc__),
@@ -1998,11 +2101,15 @@ if False:
     from werkzeug.contrib.profiler import ProfilerMiddleware
     app.config['PROFILE'] = True
     app.wsgi_app = ProfilerMiddleware(app.wsgi_app, restrictions=[30])
-    app.run(host='0.0.0.0', debug=True)
+    app.run(host=app.config['BIND_IP'],
+            port=app.config['BIND_PORT'],
+            debug=app.config['DEBUG'])
 
 # normal run
 if True:
     if __name__ == '__main__':
         logger.info('AJ start')
-        app.run(host='0.0.0.0', debug=True)
+        app.run(host=app.config['BIND_IP'],
+                port=app.config['BIND_PORT'],
+                debug=app.config['DEBUG'])
         logger.info('AJ end')
