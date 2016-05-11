@@ -17,7 +17,7 @@ Repository & documentation : https://github.com/cbueche/Agent-Jones
 # -----------------------------------------------------------------------------------
 
 # update doc/RELEASES.md when touching this
-__version__ = '15.4.2016'
+__version__ = '11.5.2016'
 
 from flask import Flask, url_for, make_response, jsonify, send_from_directory, request
 from flask import render_template
@@ -40,6 +40,7 @@ from subprocess import Popen, PIPE, STDOUT
 import socket
 import logging
 import logging.handlers
+import re
 
 import autovivification
 
@@ -200,14 +201,11 @@ class DeviceAPI(restful.Resource):
 
             deviceinfo['sysUpTime'] = int(m.sysUpTime) / 100
 
-            logger.debug(
-                'fn=DeviceAPI/get : %s : get serial numbers' % devicename)
-            (max_switches, deviceinfo['entities']) = self.get_serial(m, devicename)
-            deviceinfo['cswMaxSwitchNum'] = max_switches
+            logger.debug('fn=DeviceAPI/get : %s : get serial numbers' % devicename)
+            (deviceinfo['cswMaxSwitchNum'], deviceinfo['entities']) = self.get_serial(m, devicename)
 
             # sysoid mapping
-            (deviceinfo['hwVendor'], deviceinfo['hwModel']) = sysoidmap.translate_sysoid(
-                deviceinfo['sysObjectID'])
+            (deviceinfo['hwVendor'], deviceinfo['hwModel']) = sysoidmap.translate_sysoid(deviceinfo['sysObjectID'])
 
         except Exception, e:
             logger.error(
@@ -245,59 +243,59 @@ class DeviceAPI(restful.Resource):
         return deviceinfo
 
 
+
     def get_serial(self, m, devicename):
         ''' get the serial numbers using the Entity-MIB
-            https://raw.github.com/vincentbernat/snimpy/master/examples/get-serial.py
-            http://kb.paessler.com/en/topic/41133-how-can-i-get-prtg-to-recognize-cisco-switches-in-stack-that-utilize-only-1-ip-address
 
             return a list of entries, as we might have a stacked switch configuration
+            we return only interesting entities (chassis, psu, module, stack)
         '''
 
         # first, find out if the switch is stacked :
         # when working, use 0 for non stack and 1 for stacks in the top-parent search below
         logger.debug("fn=DeviceAPI/get_serial : %s : count switch members" % devicename)
         counter = 0
-
         try:
-            # for entry in m.cswSwitchNumCurrent:
-            #    logger.debug("fn=DeviceAPI/get_serial : %s : found member %s" % (devicename, entry))
-            #    counter += 1
             for index, value in m.cswSwitchNumCurrent.iteritems():
-                logging.debug('fn=DeviceAPI/get_serial cswSwitchNumCurrent entry %s, %s' % (index, value))
+                logging.debug(
+                    'fn=DeviceAPI/get_serial cswSwitchNumCurrent entry %s, %s' % (
+                    index, value))
                 counter += 1
         except snmp.SNMPException, e:
-            logger.info("fn=DeviceAPI/get_serial : %s : exception in get_serial/get-cswSwitchNumCurrent : <%s>" % (devicename, e))
+            logger.info(
+                "fn=DeviceAPI/get_serial : %s : exception in get_serial/get-cswSwitchNumCurrent : <%s>" % (
+                devicename, e))
 
-        if counter > 1:
-            parent_search_stop_at = 1
-            logger.debug("fn=DeviceAPI/get_serial : %s : search for multiple serials within stack" % (devicename))
-        else:
-            parent_search_stop_at = 0
-            logger.debug("fn=DeviceAPI/get_serial : %s : search for single serial within switch" % (devicename))
-
-        # now we know where to stop, get serials
-        # can be slow for huge core switches like a 6500. Maybe we need a faster method
-        # some very old Cisco switches have no support for the Entity-MIB
+        # see OBJECT entPhysicalClass in ENTITY-MIB.my
+        interesting_classes = [3, 6, 9, 11]    # chassis, psu, module, stack
+        # to reformat the class for humans
+        class_regex = re.compile(r'\(\d+\)$')
         try:
             hardware_info = []
-            for index, value in m.entPhysicalContainedIn.iteritems():
-                if value == parent_search_stop_at:
+            for index, value in m.entPhysicalClass.iteritems():
+                if value in interesting_classes:
                     hardware_info.append({
+                        'physicalIndex':        index,
                         'physicalDescr':        m.entPhysicalDescr[index],
                         'physicalHardwareRev':  m.entPhysicalHardwareRev[index],
                         'physicalFirmwareRev':  m.entPhysicalFirmwareRev[index],
                         'physicalSoftwareRev':  m.entPhysicalSoftwareRev[index],
                         'physicalSerialNum':    m.entPhysicalSerialNum[index],
-                        'physicalName':         m.entPhysicalName[index]
+                        'physicalName':         m.entPhysicalName[index],
+                        'physicalClass':        re.sub(class_regex, '', str(m.entPhysicalClass[index]))
                     })
         except snmp.SNMPException, e:
-            logger.info("fn=DeviceAPI/get_serial : %s : exception in get_serial/get-entPhysicalContainedIn : <%s>" % (devicename, e))
+            logger.info(
+                "fn=DeviceAPI/get_serial : %s : exception in get_serial/get-entPhysicalContainedIn : <%s>" % (
+                devicename, e))
 
         # found something ?
         if len(hardware_info) == 0:
-            logger.warn("fn=DeviceAPI/get_serial : %s : could not get an entity parent" % devicename)
+            logger.warn(
+                "fn=DeviceAPI/get_serial : %s : could not get an entity parent" % devicename)
         else:
-            logger.debug("fn=DeviceAPI/get_serial : %s : got %s serial(s)" % (devicename, len(hardware_info)))
+            logger.debug("fn=DeviceAPI/get_serial : %s : got %s serial(s)" % (
+            devicename, len(hardware_info)))
 
         return (counter, hardware_info)
 
@@ -585,6 +583,13 @@ class InterfaceAPI(restful.Resource):
             vlanAPI = vlanlistAPI()
             voice_vlans = vlanAPI.get_voice_vlans(devicename, m, ro_community)
 
+            # collect the mapping between interfaces and entities
+            # constructs a table (dict) 'ifname' --> 'enclosing-chassis'
+            # e.g. {<String: GigabitEthernet1/0/5>: <Integer: 1001>, etc}
+            entities = self.collect_entities(m, devicename)
+            merged_entities = self.merge_entities(entities, devicename)
+            entities_if_to_chassis = self.get_ports(merged_entities, devicename)
+
             if showvlannames:
                 vlans = vlanAPI.get_vlans(devicename, m, ro_community)
 
@@ -621,8 +626,8 @@ class InterfaceAPI(restful.Resource):
                 interface['ifSpeed'] = m.ifSpeed[index]
                 interface['ifDescr'] = str(m.ifDescr[index])
                 interface['ifAlias'] = str(m.ifAlias[index])
-                interface['dot3StatsDuplexStatus'] = str(
-                    m.dot3StatsDuplexStatus[index])
+                interface['dot3StatsDuplexStatus'] = str(m.dot3StatsDuplexStatus[index])
+                interface['physicalIndex'] = entities_if_to_chassis.get(interface['ifDescr'], None)
 
                 # try to get vlan numbers (data and voice)
                 vlan_nr = m.vmVlan[index]
@@ -782,6 +787,124 @@ class InterfaceAPI(restful.Resource):
                 "fn=InterfaceAPI/get_poe : %s : could not get poe info, probably a device without POE. Status : %s" % (devicename, e))
 
         return poe
+
+    # -----------------------------------------------------------------------------------
+    def collect_entities(self, m, devicename):
+
+        # entPhysicalClass
+        entries_entPhysicalClass = {}
+        tstart = datetime.now()
+        counter = 0
+        logger.info('%s : loop over entPhysicalClass.iteritems' % devicename)
+        for index, value in m.entPhysicalClass.iteritems():
+            logger.debug('entPhysicalClass entry %s, %s' % (index, value))
+            entries_entPhysicalClass[index] = value
+            counter += 1
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds +
+                                          tdiff.days * 24 * 3600) * 10 ** 6) / 1000
+        logger.info('loop over entPhysicalClass.iteritems done in %s, %s entries found' % (duration, counter))
+
+        # entPhysicalName
+        entries_entPhysicalName = {}
+        tstart = datetime.now()
+        counter = 0
+        logger.info('%s : loop over entPhysicalName.iteritems' % devicename)
+        for index, value in m.entPhysicalName.iteritems():
+            logger.debug('entPhysicalName entry %s, %s' % (index, value))
+            entries_entPhysicalName[index] = value
+            counter += 1
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds +
+                                          tdiff.days * 24 * 3600) * 10 ** 6) / 1000
+        logger.info('loop over entPhysicalName.iteritems done in %s, %s entries found' % (duration, counter))
+
+        # entPhysicalContainedIn
+        entries_entPhysicalContainedIn = {}
+        tstart = datetime.now()
+        counter = 0
+        logger.info('%s : loop over entPhysicalContainedIn.iteritems' % devicename)
+        for index, value in m.entPhysicalContainedIn.iteritems():
+            logger.debug('entPhysicalContainedIn entry %s, %s' % (index, value))
+            entries_entPhysicalContainedIn[index] = value
+            counter += 1
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds +
+                                          tdiff.days * 24 * 3600) * 10 ** 6) / 1000
+        logger.info('loop over entPhysicalContainedIn.iteritems done in %s, %s entries found' % (duration, counter))
+
+        return ({'entries_entPhysicalClass': entries_entPhysicalClass,
+                 'entries_entPhysicalName': entries_entPhysicalName,
+                 'entries_entPhysicalContainedIn': entries_entPhysicalContainedIn})
+
+    # -----------------------------------------------------------------------------------
+    def merge_entities(self, entities, devicename):
+
+        # we merge entities based on the content of the class table
+        # strategies if the 3 collected tables have different index values:
+        # - if something is not in class table --> it will be ignored by this loop
+        # - if something is in class table but has no name or cin --> None
+
+        logger.info('%s : merge entities' % devicename)
+
+        merged_entities = autovivification.AutoVivification()
+        for idx, value in entities['entries_entPhysicalClass'].iteritems():
+            logger.debug('merging index %s of class %s' % (idx, value))
+            merged_entities[idx]['class'] = value
+            merged_entities[idx]['name'] = entities['entries_entPhysicalName'].get(idx, None)
+            merged_entities[idx]['cin'] = entities['entries_entPhysicalContainedIn'].get(idx, None)
+
+        logger.info('%s : done merging entities' % devicename)
+
+        return merged_entities
+
+    # -----------------------------------------------------------------------------------
+    def get_ports(self, merged_entities, devicename):
+
+        # construct a table (dict) 'ifname' --> 'enclosing-chassis'
+        # we go over the entity table, find out each interface (class=port)
+        # and then find the enclosing-chassis of this interface
+
+        logger.info('%s : get_ports' % devicename)
+
+        port_table = {}
+        for idx, entry in merged_entities.iteritems():
+            # only ports
+            if entry['class'] == 10:  # entPhysicalClass=10 are ports (interfaces of some sort)
+                logger.debug('%s : port %s' % (devicename, entry['name']))
+                # entPhysicalClass=3 are chassis, this function
+                chassis_idx = self.find_parent_of_type(idx, 3, merged_entities)
+                port_table[entry['name']] = chassis_idx
+
+        logger.info('%s : done get_ports' % devicename)
+
+        return port_table
+
+    # -----------------------------------------------------------------------------------
+    def find_parent_of_type(self, port_idx, searched_parent_type, merged_entities):
+
+        # this is a recursive function walking up the entity tree to find
+        # the first ancestor of desired type
+
+        logger.debug('find_parent_of_type %s for entity %s' % (searched_parent_type, port_idx))
+
+        parent_idx = merged_entities[port_idx]['cin']
+        logger.debug('parent of port %s is %s' % (port_idx, parent_idx))
+
+        type_of_parent = merged_entities[parent_idx]['class']
+        logger.debug('type of parent %s is %s' % (parent_idx, type_of_parent))
+
+        # is the parent already the desired type ?
+        if type_of_parent == searched_parent_type:
+            # yes !
+            logger.debug('parent %s has the searched type %s' % (parent_idx, searched_parent_type))
+            return parent_idx
+        else:
+            # no, go deeper
+            return self.find_parent_of_type(parent_idx, 3, merged_entities)
 
 
 # -----------------------------------------------------------------------------------
