@@ -2,11 +2,11 @@ Release notes
 =============
 
 
-10.5.2016
+11.5.2016
 ---------
 
 - entity-index matching between device (chassis) and interfaces. You need to match device.physicalIndex and interface[index].physicalIndex
-- device info now provide more entities. You might want to filter on the desired class, e.g. to get almost the same results as the previous version, extract the entities where physicalClass = "chassis".
+- device info provides the entity class and more (chassis, psu, module, stack) types of entities. You might want to filter on the desired class, e.g. to get almost the same results as the previous version, extract the entities where physicalClass = "chassis".
 
 
 15.4.2016
