@@ -1,14 +1,13 @@
 Installation
 ------------
 
-Installation must be done within a [Python virtual environment](http://www.virtualenv.org/). The goal is to isolate your application from courageous system administrators running OS upgrades without thinking first.
+Installation must be done within a [Python virtual environment](http://www.virtualenv.org/). The goal is to isolate your application from courageous system administrators running OS upgrades without thinking first. The code below is for Python 2.6 on Ubuntu 10.04, but it has been working fine on Ubuntu 14.04 with Python 2.7.
 
     /opt/local/bin/virtualenv-2.6 --no-site-packages aj
     cd aj
     source bin/activate
+    pip install -U setuptools
     pip install -r .../deployment/requirements.pip
-    pip install PyCrypto
-    pip install https://github.com/knipknap/exscript/zipball/master
 
     rsync -av .../app ./
     python aj.py
@@ -23,7 +22,7 @@ File : site-packages/snimpy/snmp.py
     --- snmp.py.sav	2016-01-29 10:53:47.112808191 +0100
     +++ snmp.py	2016-01-29 10:54:48.817420481 +0100
     @@ -215,6 +215,12 @@
-    
+
          def _convert(self, value):
              """Convert a PySNMP value to some native Python type"""
     +        try:
@@ -48,7 +47,7 @@ OS X: run this before "pip":
 
 Ubuntu: this might not be strictly needed anymore, but I have no fresh system to test. It was needed before I added all needed MIBs. YMMV.
 
-    sudo apt-get install libapache2-mod-wsgi python-virtualenv build-essential python-dev libffi-dev libsmi2-dev git snmp-mibs-downloader
+    sudo apt-get install libapache2-mod-wsgi python-virtualenv build-essential python-dev libffi-dev libsmi2-dev git snmp-mibs-downloader libssl-dev
 
 
 

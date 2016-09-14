@@ -15,3 +15,6 @@ aj/.python-version
 
 # Pycharm
 .idea
+
+# OS X mess
+.DS_Store
