@@ -17,17 +17,18 @@ Repository & documentation : https://github.com/cbueche/Agent-Jones
 # -----------------------------------------------------------------------------------
 
 # update doc/RELEASES.md when touching this
-__version__ = '11.5.2016'
+__version__ = '26.10.2016'
 
 from flask import Flask, url_for, make_response, jsonify, send_from_directory, request
 from flask import render_template
 from flask.json import loads
 
-from flask.ext import restful
-from flask.ext.restful import reqparse
+from flask_restful import Resource, Api
+from flask_restful import reqparse
 
-from flask.ext.httpauth import HTTPBasicAuth
+from flask_httpauth import HTTPBasicAuth
 auth = HTTPBasicAuth()
+
 
 import time
 from datetime import datetime
@@ -148,7 +149,7 @@ class DocCollection():
 # -----------------------------------------------------------------------------------
 # GET on a single device
 # -----------------------------------------------------------------------------------
-class DeviceAPI(restful.Resource):
+class DeviceAPI(Resource):
     __doc__ = '''{
         "name": "DeviceAPI",
         "description": "GET info from a single device.",
@@ -303,7 +304,7 @@ class DeviceAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 # POST on a single $device/action
 # -----------------------------------------------------------------------------------
-class DeviceActionAPI(restful.Resource):
+class DeviceActionAPI(Resource):
     __doc__ = '''{
         "name": "DeviceActionAPI",
         "description": "POST action to a single device. Only possible action for now is ping",
@@ -382,7 +383,7 @@ class DeviceActionAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 # PUT on a single device : save the running-config to startup-config
 # -----------------------------------------------------------------------------------
-class DeviceSaveAPI(restful.Resource):
+class DeviceSaveAPI(Resource):
     '''
     {
         "name": "DeviceSaveAPI",
@@ -503,7 +504,7 @@ class DeviceSaveAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 # GET interfaces from a device
 # -----------------------------------------------------------------------------------
-class InterfaceAPI(restful.Resource):
+class InterfaceAPI(Resource):
     __doc__ = '''{
         "name": "InterfaceAPI",
         "description": "GET interfaces from a device. Adding ?showmac=1 to the URI will list the MAC addresses of devices connected to ports. Adding ?showvlannames=1 will show the vlan names for each vlan. Adding ?showpoe=1 will provide the power consumption for each port. Adding ?showcdp=1 will provide CDP information for each port. Adding ?showdhcp=1 will collect DHCP snooping information for each port. All these options add significant time and overhead to the collection process.",
@@ -908,9 +909,312 @@ class InterfaceAPI(restful.Resource):
 
 
 # -----------------------------------------------------------------------------------
+# GET interfaces from a device
+# try to make this one quicker by using bulk-get
+# -----------------------------------------------------------------------------------
+class QuickInterfaceAPI(Resource):
+    __doc__ = '''{
+        "name": "QuickInterfaceAPI",
+        "description": "FIXME : WARNING : IN CONSTRUCTION. GET interfaces from a device. Adding ?showmac=1 to the URI will list the MAC addresses of devices connected to ports. Adding ?showvlannames=1 will show the vlan names for each vlan. Adding ?showpoe=1 will provide the power consumption for each port. Adding ?showcdp=1 will provide CDP information for each port. Adding ?showdhcp=1 will collect DHCP snooping information for each port. All these options add significant time and overhead to the collection process.",
+        "auth": true,
+        "auth-type": "BasicAuth",
+        "params": [],
+        "returns": "A list of device interfaces."
+    }'''
+    decorators = [auth.login_required]
+
+    # check arguments
+    def __init__(self):
+        self.reqparse = reqparse.RequestParser()
+        self.reqparse.add_argument('showmac', default=0, type=int, required=False,
+                                   help='showmac=0|1. List the MAC addresses of devices connected to ports.')
+        self.reqparse.add_argument('showvlannames', default=0, type=int,
+                                   required=False,
+                                   help='showvlannames=0|1. Show the vlan names for each vlan.')
+        self.reqparse.add_argument('showpoe', default=0, type=int, required=False,
+                                   help='showpoe=0|1. Provide the power consumption for each port.')
+        self.reqparse.add_argument('showcdp', default=0, type=int, required=False,
+                                   help='showcdp=0|1. Provide the CDP information for each port.')
+        self.reqparse.add_argument('showdhcp', default=0, type=int, required=False,
+                                   help='showdhcp=0|1. Provide the DHCP snooped information for each port.')
+        super(QuickInterfaceAPI, self).__init__()
+
+    def get(self, devicename):
+
+        logger.debug('fn=QuickInterfaceAPI/get : src=%s, %s' % (request.remote_addr, devicename))
+
+        tstart = datetime.now()
+
+        # decode query parameters and transform them into booleans. Does
+        # apparently not work if done in reqparse.add_argument() above
+        args = self.reqparse.parse_args()
+        showmac = True if args['showmac'] else False
+        showvlannames = True if args['showvlannames'] else False
+        showpoe = True if args['showpoe'] else False
+        showcdp = True if args['showcdp'] else False
+        showdhcp = True if args['showdhcp'] else False
+        logger.info(
+            'fn=QuickInterfaceAPI/get : %s : showmac=%s, showvlannames=%s, showpoe=%s, showcdp=%s, showdhcp=%s' %
+            (devicename, showmac, showvlannames, showpoe, showcdp, showdhcp))
+
+        ro_community = credmgr.get_credentials(devicename)['ro_community']
+        if not check.check_snmp(M, devicename, ro_community, 'RO'):
+            return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
+
+        deviceinfo = autovivification.AutoVivification()
+        deviceinfo['name'] = devicename
+
+        logger.debug('fn=QuickInterfaceAPI/get : %s : creating the snimpy manager' % devicename)
+        # FIXME : the timeout here is probably a bad idea. The sum of apps is likely to fail
+        # not specifying "bulk=N" is activating it
+        m = M(host=devicename,
+              community=ro_community,
+              version=2,
+              timeout=app.config['SNMP_TIMEOUT'],
+              retries=app.config['SNMP_RETRIES'],
+              cache=app.config['SNMP_CACHE'],
+              none=True)
+
+        deviceinfo['sysName'] = m.sysName
+
+        # get the mac list
+        if showmac:
+            macAPI = MacAPI()
+            macs, total_mac_entries = macAPI.get_macs_from_device(devicename, m, ro_community)
+
+        # collect the voice vlans
+        if showvlannames:
+            vlanAPI = vlanlistAPI()
+            voice_vlans = vlanAPI.get_voice_vlans(devicename, m, ro_community)
+            data_vlans = vlanAPI.get_vlans(devicename, m, ro_community)
+
+        if showpoe:
+            poe = self.get_poe(devicename, m)
+
+        if showcdp:
+            cdpAPI = CDPAPI()
+            cdps = cdpAPI.get_cdp_from_device(devicename, m, ro_community)
+
+        if showdhcp:
+            dhcpAPI = DHCPsnoopAPI()
+            dhcp_snooping_entries = dhcpAPI.get_dhcp_snooping_from_device(devicename, m, ro_community)
+
+        # here, we collect all properties ("columns" in Snimpy speak) from the ifTable
+        # we do this with single iteritems() loops, as they use Bulk-Get, which is much faster
+        # the results of each loop enriches a "giant dict".
+        # At the end, we do a final loop to add the stuff collected above
+
+        # the "giant dict" indexed by the ifIndex
+        interfaces = autovivification.AutoVivification()
+
+        logger.debug('fn=QuickInterfaceAPI/get : %s : get ifDescr' % devicename)
+        for index, desc in m.ifDescr.iteritems():
+            # logger.debug('fn=QuickInterfaceAPI/get : %s : index = %s, desc = %s' % (devicename, index, desc))
+            interfaces[index]['ifDescr'] = desc
+
+        logger.debug('fn=QuickInterfaceAPI/get : %s : get ifAdminStatus' % devicename)
+        for index, adminstatus in m.ifAdminStatus.iteritems():
+            # logger.debug('fn=QuickInterfaceAPI/get : %s : index = %s, admin-status = %s' % (devicename, index, adminstatus))
+            interfaces[index]['ifAdminStatus'], interfaces[index]['ifAdminStatusText'] = util.translate_status(str(adminstatus))
+
+        logger.debug('fn=QuickInterfaceAPI/get : %s : get ifOperStatus' % devicename)
+        for index, operstatus in m.ifOperStatus.iteritems():
+            # logger.debug('fn=QuickInterfaceAPI/get : %s : index = %s, oper-status = %s' % (devicename, index, operstatus))
+            interfaces[index]['ifOperStatus'], interfaces[index]['ifOperStatusText'] = util.translate_status(str(operstatus))
+
+        logger.debug('fn=QuickInterfaceAPI/get : %s : get ifType' % devicename)
+        for index, iftype in m.ifType.iteritems():
+            # logger.debug('fn=QuickInterfaceAPI/get : %s : index = %s, iftype = %s' % (devicename, index, iftype))
+            interfaces[index]['ifType'] = str(iftype)
+
+        logger.debug('fn=QuickInterfaceAPI/get : %s : get ifMtu' % devicename)
+        for index, ifmtu in m.ifMtu.iteritems():
+            # logger.debug('fn=InterfaceAPI/get : %s : index = %s, ifmtu = %s' % (devicename, index, ifmtu))
+            interfaces[index]['ifMtu'] = ifmtu
+
+        logger.debug('fn=QuickInterfaceAPI/get : %s : get ifSpeed' % devicename)
+        for index, ifspeed in m.ifSpeed.iteritems():
+            # logger.debug('fn=QuickInterfaceAPI/get : %s : index = %s, ifspeed = %s' % (devicename, index, ifspeed))
+            interfaces[index]['ifSpeed'] = ifspeed
+
+        logger.debug('fn=QuickInterfaceAPI/get : %s : get ifAlias' % devicename)
+        for index, ifalias in m.ifAlias.iteritems():
+            # logger.debug('fn=QuickInterfaceAPI/get : %s : index = %s, ifalias = %s' % (devicename, index, ifalias))
+            interfaces[index]['ifAlias'] = str(ifalias)
+
+        logger.debug('fn=QuickInterfaceAPI/get : %s : get dot3StatsDuplexStatus' % devicename)
+        for index, duplex in m.dot3StatsDuplexStatus.iteritems():
+            # logger.debug('fn=QuickInterfaceAPI/get : %s : index = %s, duplex = %s' % (devicename, index, duplex))
+            interfaces[index]['dot3StatsDuplexStatus'] = str(duplex)
+        # add a null value when an index has no entry in the dot3StatsDuplexStatus table
+        for interface in interfaces:
+            if not 'dot3StatsDuplexStatus' in interfaces[interface]:
+                interfaces[interface]['dot3StatsDuplexStatus'] = None
+
+        logger.debug('fn=QuickInterfaceAPI/get : %s : get vmVlan' % devicename)
+        for index, vlan_id in m.vmVlan.iteritems():
+            # logger.debug('fn=QuickInterfaceAPI/get : %s : index = %s, vlan_id = %s' % (devicename, index, vlan_id))
+            interfaces[index]['vmVlanNative']['nr'] = vlan_id
+        # add a null value when an index has no entry in the vmMembershipTable table
+        for interface in interfaces:
+            if not 'vmVlanNative' in interfaces[interface]:
+                interfaces[interface]['vmVlanNative']['nr'] = None
+
+        # now we add the stuff that we collected above the ifTable/get-bulk operations
+        for index in interfaces:
+
+            # ease the flatify below
+            interfaces[index]['index'] = index
+
+            # VLANs (data and voice)
+            if showvlannames:
+
+                # data vlans
+                # use a temp variable for clarity
+                vtpVlanIndex = interfaces[index]['vmVlanNative']['nr']
+                if vtpVlanIndex in data_vlans:
+                    data_vlan_name = data_vlans[vtpVlanIndex]['name']
+                else:
+                    data_vlan_name = None
+                interfaces[index]['vmVlanNative']['name'] = data_vlan_name
+
+                # voice vlans
+                if index in voice_vlans:
+                    voice_vlan_nr = int(voice_vlans[index])
+                else:
+                    voice_vlan_nr = 0
+                interfaces[index]['vmVoiceVlanId']['nr'] = voice_vlan_nr
+                if voice_vlan_nr in data_vlans:
+                    voice_vlan_name = data_vlans[voice_vlan_nr]['name']
+                else:
+                    voice_vlan_name = ''
+                interfaces[index]['vmVoiceVlanId']['name'] = voice_vlan_name
+
+            else:
+
+                interfaces[index]['vmVlanNative'] = {'nr': 0, 'name': None}
+                interfaces[index]['vmVoiceVlanId'] = {'nr': 0, 'name': None}
+
+            # Macs
+            if showmac:
+                if index in macs:
+                    interfaces[index]['macs'] = macs[index]
+                else:
+                    interfaces[index]['macs'] = []
+
+            # POE
+            if showpoe:
+                if interfaces[index]['ifDescr'] in poe:
+                    interfaces[index]['poeStatus'] = str(poe[interfaces[index]['ifDescr']]['status'])
+                    interfaces[index]['poePower'] = poe[interfaces[index]['ifDescr']]['power']
+                else:
+                    interfaces[index]['poeStatus'] = ''
+                    interfaces[index]['poePower'] = None
+
+        # now flatify the dict to an array, because that's what our consumer wants
+        interfaces_array = []
+        for index in interfaces:
+            interfaces_array.append(interfaces[index])
+
+        deviceinfo['interfaces'] = interfaces_array
+
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds +
+                                          tdiff.days * 24 * 3600) * 10 ** 6) / 1000
+        deviceinfo['query-duration'] = duration
+
+        logger.info('fn=QuickInterfaceAPI/get : %s : duration=%s' %
+                    (devicename, deviceinfo['query-duration']))
+        return deviceinfo
+
+    def get_poe(self, devicename, m):
+        ''' get the POE info using the CISCO-POWER-ETHERNET-EXT-MIB and Entity-MIB
+
+            return a list of poe entries, indexed by port name (eg FastEthernet1/0/15)
+        '''
+        # first, create a mapping EntPhyIndex --> port name (eg FastEthernet1/0/6),
+        # as we don't have the if-idx in POE table below
+        logger.debug('fn=QuickInterfaceAPI/get_poe : %s : create a mapping EntPhyIndex --> port name' % (devicename))
+
+        tstart = datetime.now()
+
+        port_mapping = {}
+        # logger.info('%s : loop over entPhysicalName.iteritems' % devicename)
+        counter = 0
+        for index, value in m.entPhysicalName.iteritems():
+            counter += 1
+            port_mapping[index] = value
+            # logger.debug('fn=QuickInterfaceAPI/get_poe : %s : port-mapping : ent-idx=%s, port-name=%s' %
+            #             (devicename, index, port_mapping[index]))
+        # logger.info('loop over entPhysicalName.iteritems done, %s entries found' % counter)
+
+
+        # then, get the poe info. Returned entries are indexed by the port-name
+        logger.debug('fn=QuickInterfaceAPI/get_poe : %s : get poe info' % (devicename))
+        poe = {}
+        # some switches cannot do any POE and answer with "End of MIB was reached"
+        # and some clients might ask for POE for those even if the get-device API call
+        # said "no POE". In this case, only log and return an empty table
+        try:
+
+            # new faster, bulkget-way of getting infos
+            poe_parts = autovivification.AutoVivification()
+
+            logger.debug('fn=QuickInterfaceAPI/get_poe : %s : get cpeExtPsePortPwrConsumption' % (devicename))
+            for index, value in m.cpeExtPsePortPwrConsumption.iteritems():
+                poe_parts[index]['cpeExtPsePortPwrConsumption'] = value
+
+            logger.debug('fn=QuickInterfaceAPI/get_poe : %s : get pethPsePortDetectionStatus' % (devicename))
+            for index, value in m.pethPsePortDetectionStatus.iteritems():
+                poe_parts[index]['pethPsePortDetectionStatus'] = value
+
+            logger.debug('fn=QuickInterfaceAPI/get_poe : %s : get cpeExtPsePortEntPhyIndex' % (devicename))
+            for index, value in m.cpeExtPsePortEntPhyIndex.iteritems():
+                poe_parts[index]['cpeExtPsePortEntPhyIndex'] = value
+
+            # merge the tables to have it indexed by cpeExtPsePortEntPhyIndex so we can then
+            # re-merge with port_mapping collected above
+            poe_parts_merged = autovivification.AutoVivification()
+            for index in poe_parts:
+                poe_parts_merged[poe_parts[index]['cpeExtPsePortEntPhyIndex']]['Consumption'] = poe_parts[index]['cpeExtPsePortPwrConsumption']
+                poe_parts_merged[poe_parts[index]['cpeExtPsePortEntPhyIndex']]['Status'] = poe_parts[index]['pethPsePortDetectionStatus']
+
+            # and now the final merge
+            poe_entries = 0
+            for ifidx in poe_parts_merged:
+                consumption = poe_parts_merged[ifidx]['Consumption']
+                status = poe_parts_merged[ifidx]['Status']
+                if ifidx in port_mapping:
+                    port_name = port_mapping[ifidx]
+                else:
+                    port_name = ifidx
+                '''
+                logger.debug(
+                    'fn=QuickInterfaceAPI/get_poe : %s : status=%s, power=%s, ent-idx=%s, port-name=%s' %
+                    (devicename, status, consumption, ifidx, port_name))
+                '''
+                poe[port_name] = {'status': status, 'power': consumption}
+                poe_entries += 1
+
+            logger.info('fn=QuickInterfaceAPI/get_poe : %s : got %s poe entries' % (devicename, poe_entries))
+
+        except Exception, e:
+            logger.info("fn=QuickInterfaceAPI/get_poe : %s : could not get poe info, probably a device without POE. Status : %s" % (devicename, e))
+
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds +
+                                          tdiff.days * 24 * 3600) * 10 ** 6) / 1000
+        logger.info('fn=QuickInterfaceAPI/get_poe : %s : POE collection duration=%s' % (devicename, duration))
+
+        return poe
+
+
+# -----------------------------------------------------------------------------------
 # GET interfaces counters of one interface
 # -----------------------------------------------------------------------------------
-class InterfaceCounterAPI(restful.Resource):
+class InterfaceCounterAPI(Resource):
     __doc__ = '''{
         "name": "InterfaceCounterAPI",
         "description": "GET interface counters of one interface",
@@ -988,7 +1292,7 @@ class InterfaceCounterAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 # GET MAC(ethernet) to port mappings from a device
 # -----------------------------------------------------------------------------------
-class MacAPI(restful.Resource):
+class MacAPI(Resource):
     __doc__ = '''{
         "name": "MacAPI",
         "description": "MAC(ethernet) to port mappings from a device",
@@ -1022,11 +1326,13 @@ class MacAPI(restful.Resource):
               cache=app.config['SNMP_CACHE'],
               none=True)
 
-
         try:
             deviceinfo['sysName'] = m.sysName
 
+            # FIXME TODO
+            # BUG : the *bulk version is probably wrong, at least it does not bring the same data set than the original version
             macs, total_mac_entries = self.get_macs_from_device(devicename, m, ro_community)
+            #macs, total_mac_entries = self.get_macs_from_device_bulk(devicename, m, ro_community)
 
             macs_organized = []
             for ifindex in macs:
@@ -1051,6 +1357,7 @@ class MacAPI(restful.Resource):
                     (devicename, duration))
         deviceinfo['macs'] = macs_organized
         return deviceinfo
+
 
     # we create a dict indexed by ifIndex,
     # it's then easier when having to enrich an interface info when knowing
@@ -1091,8 +1398,7 @@ class MacAPI(restful.Resource):
                        none=True)
 
                 # we pull them in an array so we can catch timeouts for broken IOS versions
-                # happened on a big stack of 8 Cisco 3750 running 12.2(46)SE
-                # (fc2)
+                # happened on a big stack of 8 Cisco 3750 running 12.2(46)SE (fc2)
                 try:
                     logger.debug(
                         'fn=MacAPI/get_macs_from_device : trying to pull all mac_entries for vlan %s (%s)' % (vlan_nr, vlan_name))
@@ -1137,11 +1443,125 @@ class MacAPI(restful.Resource):
                      "entries found" % total_mac_entries)
         return macs, total_mac_entries
 
+    # FIXME : BUG : the *bulk version is probably wrong, at least it does not bring the same data set than the original version
+    # FIXME : and it is not really faster. Are we pulling several times the same info ? Are all dot*-table below really need to be
+    # FIXME : pulled with the VLAN-based community ?
+    def get_macs_from_device_bulk(self, devicename, m, ro_community):
+        #-------------------------
+        logger.debug('fn=MacAPI/get_macs_from_device : %s' % devicename)
+
+        logger.debug('fn=MacAPI/get_macs_from_device : %s : get vlan list' % devicename)
+        vlans = autovivification.AutoVivification()
+        # names
+        for index, value in m.vtpVlanName.iteritems():
+            managementDomainIndex, vtpVlanIndex = index
+            vlans[vtpVlanIndex]['name'] = value
+        # types
+        for index, value in m.vtpVlanType.iteritems():
+            managementDomainIndex, vtpVlanIndex = index
+            vlans[vtpVlanIndex]['type'] = str(value)
+        # states
+        for index, value in m.vtpVlanState.iteritems():
+            managementDomainIndex, vtpVlanIndex = index
+            vlans[vtpVlanIndex]['state'] = str(value)
+        logger.debug('fn=MacAPI/get_macs_from_device : %s : got %s vlans' % (devicename, len(vlans)))
+
+        # now loop across every VLAN
+        macs = {}
+        total_mac_entries = 0
+        for vlan_nr in vlans:
+
+            vlan_type = vlans[vlan_nr]['type']
+            vlan_state = vlans[vlan_nr]['state']
+            vlan_name = vlans[vlan_nr]['name']
+            logger.debug('fn=MacAPI/get_macs_from_device : do vlan_nr = %s, name = %s, type = %s, state = %s' % (vlan_nr, vlan_name, vlan_type, vlan_state))
+
+            # only ethernet VLANs
+            if vlan_type == 'ethernet(1)' and vlan_state == 'operational(1)':
+                logger.debug('fn=MacAPI/get_macs_from_device : %s : polling vlan %s (%s)' % (devicename, vlan_nr, vlan_name))
+
+                # VLAN-based community, have a local manager for each VLAN
+                vlan_community = "%s@%s" % (ro_community, vlan_nr)
+                # can be slow for big switches, so try only once but longer
+                lm = M(host=devicename,
+                       community=vlan_community,
+                       version=2,
+                       timeout=app.config['SNMP_TIMEOUT_LONG'],
+                       retries=app.config['SNMP_RETRIES_NONE'],
+                       cache=app.config['SNMP_CACHE'],
+                       none=True)
+
+                # we pull them in an large block so we can catch timeouts for broken IOS versions
+                # happened on a big stack of 8 Cisco 3750 running 12.2(46)SE (fc2)
+                vlan_is_interesting = False
+                try:
+                    logger.debug('fn=MacAPI/get_macs_from_device : trying to pull all mac_entries for vlan %s (%s)' % (vlan_nr, vlan_name))
+
+                    dot1dTpFdbAddress = {}
+                    for index, mac_entry in lm.dot1dTpFdbAddress.iteritems():
+                        dot1dTpFdbAddress[index] = mac_entry
+                    logger.debug('fn=MacAPI/get_macs_from_device : got %s dot1dTpFdbAddress entries for vlan %s (%s)' % (len(dot1dTpFdbAddress), vlan_nr, vlan_name))
+                    if len(dot1dTpFdbAddress) > 0:
+                        vlan_is_interesting = True
+
+                    dot1dTpFdbPort = {}
+                    dot1dBasePortIfIndex = {}
+                    if vlan_is_interesting:
+                        for index, port in lm.dot1dTpFdbPort.iteritems():
+                            dot1dTpFdbPort[index] = port
+                        logger.debug('fn=MacAPI/get_macs_from_device : got %s dot1dTpFdbPort entries for vlan %s (%s)' % (len(dot1dTpFdbPort), vlan_nr, vlan_name))
+
+                        for index, ifindex in lm.dot1dBasePortIfIndex.iteritems():
+                            dot1dBasePortIfIndex[index] = ifindex
+                        logger.debug('fn=MacAPI/get_macs_from_device : got %s dot1dBasePortIfIndex entries for vlan %s (%s)' % (len(dot1dBasePortIfIndex), vlan_nr, vlan_name))
+
+                except:
+                    logger.info("fn=MacAPI/get_macs_from_device : failed, probably an unused VLAN (%s) on a buggy IOS producing SNMP timeout. Ignoring this VLAN" % (vlan_nr))
+
+                if vlan_is_interesting:
+                    logger.debug('fn=MacAPI/get_macs_from_device : enrich MAC table for vlan %s (%s)' % (vlan_nr, vlan_name))
+                    for mac_entry in dot1dTpFdbAddress:
+                        port = dot1dTpFdbPort[mac_entry]
+                        if port == None:
+                            logger.debug("fn=MacAPI/get_macs_from_device : %s vlan %s : skip port=None" % (devicename, vlan_nr))
+                            continue
+
+                        try:
+                            ifindex = dot1dBasePortIfIndex[port]
+                        except Exception, e:
+                            logger.debug("fn=MacAPI/get_macs_from_device : %s : port=%s, mac_entry_idx lookup failed : %s" % (devicename, port, e))
+
+                        try:
+                            mac = netaddr.EUI(mac_entry)
+                            vendor = mac.oui.registration().org
+                        except Exception, e:
+                            # logger.info("fn=MacAPI/get_macs_from_device : %s : vendor lookup failed : %s" % (devicename, e))
+                            vendor = 'unknown'
+
+                        # logger.debug("STORAGE: idx=%s, vlan=%s, mac=%s, vendor=%s" % (ifindex, vlan_nr, str(mac), vendor))
+                        mac_record = {'mac': str(mac), 'vendor': vendor, 'vlan': vlan_nr}
+                        if ifindex in macs:
+                            macs[ifindex].append(mac_record)
+                        else:
+                            macs[ifindex] = [mac_record]
+                else:
+                    logger.debug('fn=MacAPI/get_macs_from_device : skip vlan %s (%s) : no MAC inside' % (vlan_nr, vlan_name))
+
+            else:
+                logger.debug('fn=MacAPI/get_macs_from_device : %s : skipping vlan %s (%s)' % (devicename, vlan_nr, vlan_name))
+
+        mac_entries = len(macs[ifindex])
+        total_mac_entries += mac_entries
+        logger.debug("fn=MacAPI/get_macs_from_device : %s mac entries found" % mac_entries)
+
+        logger.debug("fn=MacAPI/get_macs_from_device : returning data, total %s mac entries found" % total_mac_entries)
+        return macs, total_mac_entries
+
 
 # -----------------------------------------------------------------------------------
 # GET CDP info from a device
 # -----------------------------------------------------------------------------------
-class CDPAPI(restful.Resource):
+class CDPAPI(Resource):
     __doc__ = '''{
         "name": "CDPAPI",
         "description": "GET CDP info from a device",
@@ -1238,7 +1658,7 @@ class CDPAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 # GET interface trunk info from a device
 # -----------------------------------------------------------------------------------
-class TrunkAPI(restful.Resource):
+class TrunkAPI(Resource):
     __doc__ = '''{
         "name": "TrunkAPI",
         "description": "GET interface Trunk info from a device",
@@ -1319,7 +1739,7 @@ class TrunkAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 # GET ARP info from a device
 # -----------------------------------------------------------------------------------
-class ARPAPI(restful.Resource):
+class ARPAPI(Resource):
     __doc__ = '''{
         "name": "ARPAPI",
         "description": "GET ARP info from a device (MAC to IP)",
@@ -1439,7 +1859,7 @@ class ARPAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 # GET DHCP snooping info from a device
 # -----------------------------------------------------------------------------------
-class DHCPsnoopAPI(restful.Resource):
+class DHCPsnoopAPI(Resource):
     __doc__ = '''{
         "name": "DHCPsnoopAPI",
         "description": "GET DHCP snooping info from a device",
@@ -1569,7 +1989,7 @@ class DHCPsnoopAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 # GET vlan list from a device
 # -----------------------------------------------------------------------------------
-class vlanlistAPI(restful.Resource):
+class vlanlistAPI(Resource):
     __doc__ = '''{
         "name": "vlanlistAPI",
         "description": "GET vlan list from a device",
@@ -1608,7 +2028,7 @@ class vlanlistAPI(restful.Resource):
 
             deviceinfo['sysName'] = m.sysName
 
-            logger.debug('fn=vlanlistAPI/get : %s : get vlan list' %
+            logger.debug('fn=vlanlistAPI/get : %s : get data vlan list' %
                          devicename)
             vlans_lookup_table = self.get_vlans(devicename, m, ro_community)
 
@@ -1640,33 +2060,38 @@ class vlanlistAPI(restful.Resource):
     def get_vlans(self, devicename, m, ro_community):
         ''' return a VLAN dict indexed by vlan-nr '''
 
-        logger.debug(
-            'fn=vlanlistAPI/get_vlans : %s : get vlan list' % devicename)
-        vlans = {}
-        for entry in m.vtpVlanName:
-            vlan = {}
-            logger.debug('fn=vlanlistAPI/get_vlans : %s : get vlan info for entry %s/%s' %
-                         (devicename, entry[0], entry[1]))
-            vlan['type'] = str(m.vtpVlanType[entry])
-            vlan['state'] = str(m.vtpVlanState[entry])
-            vlan['name'] = m.vtpVlanName[entry]
-            vlans[entry[1]] = vlan
+        logger.debug('fn=vlanlistAPI/get_vlans : %s : get data vlan list' % devicename)
+
+        vlans = autovivification.AutoVivification()
+        # names
+        for index, value in m.vtpVlanName.iteritems():
+            managementDomainIndex, vtpVlanIndex = index
+            vlans[vtpVlanIndex]['name'] = value
+        # types
+        for index, value in m.vtpVlanType.iteritems():
+            managementDomainIndex, vtpVlanIndex = index
+            vlans[vtpVlanIndex]['type'] = str(value)
+        # states
+        for index, value in m.vtpVlanState.iteritems():
+            managementDomainIndex, vtpVlanIndex = index
+            vlans[vtpVlanIndex]['state'] = str(value)
 
         return vlans
+
 
     def get_voice_vlans(self, devicename, m, ro_community):
         ''' return a VOICE_VLAN dict indexed by vlan-nr '''
 
-        logger.debug(
-            'fn=vlanlistAPI/get_voice_vlans : %s : get voice vlan list' % devicename)
+        logger.debug('fn=vlanlistAPI/get_voice_vlans : %s : get voice vlan list' % devicename)
         voice_vlans = {}
         # some routers (Cisco 1921) return empty list, producing an error upstream.
         # Catch it and return an empty list
         try:
-            for index in m.vmVoiceVlanId:
-                logger.debug(
-                    'fn=vlanlistAPI/get_voice_vlans : %s : get voice vlan info for index %s' % (devicename, index))
-                voice_vlans[index] = str(m.vmVoiceVlanId[index])
+
+            for index, value in m.vmVoiceVlanId.iteritems():
+                # logger.debug('fn=vlanlistAPI/get_voice_vlans : %s : got voice vlan %s for index %s' % (devicename, value, index))
+                voice_vlans[index] = str(value)
+
         except Exception, e:
             logger.info("fn=vlanlistAPI/get_voice_vlans : %s : SNMP get failed : %s" % (devicename, e))
 
@@ -1677,7 +2102,7 @@ class vlanlistAPI(restful.Resource):
 # PUT on a vlan : assign the port to a VLAN
 # /aj/api/v1/interfaces/vlan/$fqdn/$ifindex
 # -----------------------------------------------------------------------------------
-class PortToVlanAPI(restful.Resource):
+class PortToVlanAPI(Resource):
     __doc__ = '''{
         "name": "PortToVlanAPI",
         "description": "PUT on a vlan : assign the port to a VLAN",
@@ -1748,7 +2173,7 @@ class PortToVlanAPI(restful.Resource):
 # PUT on an interface : configure the interface
 # /aj/api/v1/interface/config/$fqdn/$ifindex
 # -----------------------------------------------------------------------------------
-class InterfaceConfigAPI(restful.Resource):
+class InterfaceConfigAPI(Resource):
     __doc__ = '''{
         "name": "InterfaceConfigAPI",
         "description": "PUT on an interface : configure the interface",
@@ -1829,7 +2254,7 @@ class InterfaceConfigAPI(restful.Resource):
 # this goes a bit beside the idea of this web-service, but it brings flexibility
 # FIXME: walk provide too much info if eg done on a single get instance like 1.3.6.1.2.1.1.3.0
 # -----------------------------------------------------------------------------------
-class OIDpumpAPI(restful.Resource):
+class OIDpumpAPI(Resource):
     __doc__ = '''{
         "name": "OIDpumpAPI",
         "description": "SNMP get or walk on a OID. This is not completely tested, and walk tend to give back too much data. get can be used but usually needs a .0 at the end of the OID, so the URI to get sysUptime would be `/aj/api/v1/oidpump/devicename/get/1.3.6.1.2.1.1.3.0`, while the URI to walk ifName would be `/aj/api/v1/oidpump/devicename/walk/1.3.6.1.2.1.31.1.1.1.1`",
@@ -1905,7 +2330,7 @@ class OIDpumpAPI(restful.Resource):
 # PUT on a device : run commands over ssh
 # /aj/api/v1/device/ssh/$fqdn
 # -----------------------------------------------------------------------------------
-class DeviceSshAPI(restful.Resource):
+class DeviceSshAPI(Resource):
     __doc__ = '''{
         "name": "DeviceSshAPI",
         "description": "PUT on a device : run commands over ssh. Do NOT terminate your command list with logout/exit/etc.",
@@ -2018,7 +2443,7 @@ else:
 # -----------------------------------------------------------------------------------
 # REST API
 # -----------------------------------------------------------------------------------
-api = restful.Api(app)
+api = Api(app)
 
 
 # -----------------------------------------------------------------------------------
@@ -2081,6 +2506,12 @@ api.add_resource(InterfaceAPI,
 doc.add(loads(InterfaceAPI.__doc__),
         '/aj/api/v1/interfaces/<string:devicename>',
         InterfaceAPI.__dict__['methods'])
+
+api.add_resource(QuickInterfaceAPI,
+                 '/aj/api/v2/interfaces/<string:devicename>')
+doc.add(loads(QuickInterfaceAPI.__doc__),
+        '/aj/api/v2/interfaces/<string:devicename>',
+        QuickInterfaceAPI.__dict__['methods'])
 
 api.add_resource(InterfaceCounterAPI,
                  '/aj/api/v1/interface/counter/<string:devicename>/<string:ifindex>')

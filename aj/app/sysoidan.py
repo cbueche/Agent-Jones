@@ -35,18 +35,21 @@ class SysOidAn():
             'fn=SysOidAn/init : start loading IANA enterprise mapping file %s' % enterprise_file)
         with open(enterprise_file) as enterprise_fh:
             self.enterprises = self.json.load(enterprise_fh)
+        enterprise_number = len(self.enterprises)
         self.logger.debug(
-            'fn=SysOidAn/init : done loading IANA enterprise mapping file')
+            'fn=SysOidAn/init : done loading IANA enterprise mapping file, %s enterprises found' % enterprise_number)
 
         '''
         construct ciscoProducts table
         '''
         self.logger.debug('fn=SysOidAn/init : start loading Cisco product MIB')
         self.ciscoProducts = {}
+        counter = 0
         for entry in self.mib.getNodes("CISCO-PRODUCTS-MIB"):
             oid = '.'.join(map(str, entry.oid))
             self.ciscoProducts[oid] = str(entry)
-        self.logger.debug('fn=SysOidAn/init : done loading Cisco product MIB')
+            counter += 1
+        self.logger.debug('fn=SysOidAn/init : done loading Cisco product MIB, %s products found' % counter)
 
     def translate_sysoid(self, sysoid):
         '''
