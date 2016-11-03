@@ -852,7 +852,7 @@ class InterfaceAPI(restful.Resource):
 
         merged_entities = autovivification.AutoVivification()
         for idx, value in entities['entries_entPhysicalClass'].iteritems():
-            logger.debug('merging index %s of class %s' % (idx, value))
+            logger.debug('%s : merging index %s of class %s' % (devicename, idx, value))
             merged_entities[idx]['class'] = value
             merged_entities[idx]['name'] = entities['entries_entPhysicalName'].get(idx, None)
             merged_entities[idx]['cin'] = entities['entries_entPhysicalContainedIn'].get(idx, None)
@@ -874,37 +874,37 @@ class InterfaceAPI(restful.Resource):
         for idx, entry in merged_entities.iteritems():
             # only ports
             if entry['class'] == 10:  # entPhysicalClass=10 are ports (interfaces of some sort)
-                logger.debug('%s : port %s' % (devicename, entry['name']))
+                logger.debug('%s : search enclosing chassis for port <%s>' % (devicename, entry['name']))
                 # entPhysicalClass=3 are chassis, this function
-                chassis_idx = self.find_parent_of_type(idx, 3, merged_entities)
+                chassis_idx = self.find_parent_of_type(devicename, idx, 3, merged_entities)
                 port_table[entry['name']] = chassis_idx
 
-        logger.info('%s : done get_ports' % devicename)
+        logger.info('%s : done get_ports, found %s ports' % (devicename, len(port_table)))
 
         return port_table
 
     # -----------------------------------------------------------------------------------
-    def find_parent_of_type(self, port_idx, searched_parent_type, merged_entities):
+    def find_parent_of_type(self, devicename, port_idx, searched_parent_type, merged_entities):
 
         # this is a recursive function walking up the entity tree to find
         # the first ancestor of desired type
 
-        logger.debug('find_parent_of_type %s for entity %s' % (searched_parent_type, port_idx))
+        logger.debug('%s : find_parent_of_type %s for entity %s' % (devicename, searched_parent_type, port_idx))
 
         parent_idx = merged_entities[port_idx]['cin']
-        logger.debug('parent of port %s is %s' % (port_idx, parent_idx))
+        logger.debug('%s : parent of port %s is %s' % (devicename, port_idx, parent_idx))
 
         type_of_parent = merged_entities[parent_idx]['class']
-        logger.debug('type of parent %s is %s' % (parent_idx, type_of_parent))
+        logger.debug('%s : type of parent %s is %s' % (devicename, parent_idx, type_of_parent))
 
         # is the parent already the desired type ?
         if type_of_parent == searched_parent_type:
             # yes !
-            logger.debug('parent %s has the searched type %s' % (parent_idx, searched_parent_type))
+            logger.debug('%s : parent %s has the searched type %s' % (devicename, parent_idx, searched_parent_type))
             return parent_idx
         else:
             # no, go deeper
-            return self.find_parent_of_type(parent_idx, 3, merged_entities)
+            return self.find_parent_of_type(devicename, parent_idx, 3, merged_entities)
 
 
 # -----------------------------------------------------------------------------------
