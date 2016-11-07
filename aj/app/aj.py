@@ -1331,8 +1331,8 @@ class MacAPI(Resource):
 
             # FIXME TODO
             # BUG : the *bulk version is probably wrong, at least it does not bring the same data set than the original version
-            macs, total_mac_entries = self.get_macs_from_device(devicename, m, ro_community)
-            #macs, total_mac_entries = self.get_macs_from_device_bulk(devicename, m, ro_community)
+            # macs, total_mac_entries = self.get_macs_from_device(devicename, m, ro_community)
+            macs, total_mac_entries = self.get_macs_from_device_bulk(devicename, m, ro_community)
 
             macs_organized = []
             for ifindex in macs:
@@ -1371,8 +1371,7 @@ class MacAPI(Resource):
         for entry in m.vtpVlanName:
             vlan_nr = entry[1]
             try:
-                logger.debug(
-                    'fn=MacAPI/get_macs_from_device : vlan_nr = %s' % (vlan_nr))
+                logger.debug('fn=MacAPI/get_macs_from_device : checking vlan_nr = %s' % (vlan_nr))
                 vlan_type = m.vtpVlanType[entry]
                 vlan_state = m.vtpVlanState[entry]
                 vlan_name = m.vtpVlanName[entry]
@@ -1402,6 +1401,7 @@ class MacAPI(Resource):
                 try:
                     logger.debug(
                         'fn=MacAPI/get_macs_from_device : trying to pull all mac_entries for vlan %s (%s)' % (vlan_nr, vlan_name))
+                    mac_entries = 0
                     for mac_entry in lm.dot1dTpFdbAddress:
                         port = lm.dot1dTpFdbPort[mac_entry]
                         if port == None:
@@ -1422,35 +1422,33 @@ class MacAPI(Resource):
                             #logger.info("fn=MacAPI/get_macs_from_device : %s : vendor lookup failed : %s" % (devicename, e))
                             vendor = 'unknown'
 
-                        #logger.debug("STORAGE: idx=%s, vlan=%s, mac=%s, vendor=%s" % (ifindex, vlan_nr, str(mac), vendor))
-                        mac_record = {'mac': str(
-                            mac), 'vendor': vendor, 'vlan': vlan_nr}
+                        # logger.debug("TRACE: idx=%s, vlan=%s, mac=%s, vendor=%s" % (ifindex, vlan_nr, str(mac), vendor))
+                        mac_record = {'mac': str(mac), 'vendor': vendor, 'vlan': vlan_nr}
                         if ifindex in macs:
                             macs[ifindex].append(mac_record)
                         else:
                             macs[ifindex] = [mac_record]
 
-                    mac_entries = len(macs[ifindex])
+                        mac_entries += 1
+
                     total_mac_entries += mac_entries
-                    logger.debug("fn=MacAPI/get_macs_from_device : %s mac entries "
-                                 "found" % mac_entries)
+                    logger.debug("fn=MacAPI/get_macs_from_device : %s mac entries found in vlan %s, total now %s" % (mac_entries, vlan_nr, total_mac_entries))
 
                 except:
                     logger.info(
                         "fn=MacAPI/get_macs_from_device : failed, probably an unused VLAN (%s) on a buggy IOS producing SNMP timeout. Ignoring this VLAN" % (vlan_nr))
+            else:
+                logger.debug('fn=MacAPI/get_macs_from_device : %s : vlan %s (%s) skipped' % (devicename, vlan_nr, vlan_name))
 
-        logger.debug("fn=MacAPI/get_macs_from_device : returning data, total %s mac "
-                     "entries found" % total_mac_entries)
+        logger.debug("fn=MacAPI/get_macs_from_device : returning data, total %s mac entries found" % total_mac_entries)
         return macs, total_mac_entries
 
     # FIXME : BUG : the *bulk version is probably wrong, at least it does not bring the same data set than the original version
-    # FIXME : and it is not really faster. Are we pulling several times the same info ? Are all dot*-table below really need to be
-    # FIXME : pulled with the VLAN-based community ?
+    #               and it is not really faster. Are we pulling several times the same info ? Are all dot*-table below really need to be
+    #               pulled with the VLAN-based community ?
     def get_macs_from_device_bulk(self, devicename, m, ro_community):
-        #-------------------------
-        logger.debug('fn=MacAPI/get_macs_from_device : %s' % devicename)
 
-        logger.debug('fn=MacAPI/get_macs_from_device : %s : get vlan list' % devicename)
+        logger.debug('fn=MacAPI/get_macs_from_device_bulk : %s : get vlan list' % devicename)
         vlans = autovivification.AutoVivification()
         # names
         for index, value in m.vtpVlanName.iteritems():
@@ -1471,10 +1469,11 @@ class MacAPI(Resource):
         total_mac_entries = 0
         for vlan_nr in vlans:
 
+            mac_entries = 0
             vlan_type = vlans[vlan_nr]['type']
             vlan_state = vlans[vlan_nr]['state']
             vlan_name = vlans[vlan_nr]['name']
-            logger.debug('fn=MacAPI/get_macs_from_device : do vlan_nr = %s, name = %s, type = %s, state = %s' % (vlan_nr, vlan_name, vlan_type, vlan_state))
+            logger.debug('fn=MacAPI/get_macs_from_device : checking vlan_nr = %s, name = %s, type = %s, state = %s' % (vlan_nr, vlan_name, vlan_type, vlan_state))
 
             # only ethernet VLANs
             if vlan_type == 'ethernet(1)' and vlan_state == 'operational(1)':
@@ -1500,8 +1499,9 @@ class MacAPI(Resource):
                     dot1dTpFdbAddress = {}
                     for index, mac_entry in lm.dot1dTpFdbAddress.iteritems():
                         dot1dTpFdbAddress[index] = mac_entry
+                        mac_entries += 1
                     logger.debug('fn=MacAPI/get_macs_from_device : got %s dot1dTpFdbAddress entries for vlan %s (%s)' % (len(dot1dTpFdbAddress), vlan_nr, vlan_name))
-                    if len(dot1dTpFdbAddress) > 0:
+                    if mac_entries > 0:
                         vlan_is_interesting = True
 
                     dot1dTpFdbPort = {}
@@ -1514,6 +1514,8 @@ class MacAPI(Resource):
                         for index, ifindex in lm.dot1dBasePortIfIndex.iteritems():
                             dot1dBasePortIfIndex[index] = ifindex
                         logger.debug('fn=MacAPI/get_macs_from_device : got %s dot1dBasePortIfIndex entries for vlan %s (%s)' % (len(dot1dBasePortIfIndex), vlan_nr, vlan_name))
+                    else:
+                        logger.debug('fn=MacAPI/get_macs_from_device : vlan %s (%s) skipped, no MAC found on it' % (vlan_nr, vlan_name))
 
                 except:
                     logger.info("fn=MacAPI/get_macs_from_device : failed, probably an unused VLAN (%s) on a buggy IOS producing SNMP timeout. Ignoring this VLAN" % (vlan_nr))
@@ -1538,21 +1540,20 @@ class MacAPI(Resource):
                             # logger.info("fn=MacAPI/get_macs_from_device : %s : vendor lookup failed : %s" % (devicename, e))
                             vendor = 'unknown'
 
-                        # logger.debug("STORAGE: idx=%s, vlan=%s, mac=%s, vendor=%s" % (ifindex, vlan_nr, str(mac), vendor))
+                        # logger.debug("TRACE: idx=%s, vlan=%s, mac=%s, vendor=%s" % (ifindex, vlan_nr, str(mac), vendor))
                         mac_record = {'mac': str(mac), 'vendor': vendor, 'vlan': vlan_nr}
                         if ifindex in macs:
                             macs[ifindex].append(mac_record)
                         else:
                             macs[ifindex] = [mac_record]
                 else:
-                    logger.debug('fn=MacAPI/get_macs_from_device : skip vlan %s (%s) : no MAC inside' % (vlan_nr, vlan_name))
+                    logger.debug('fn=MacAPI/get_macs_from_device : vlan %s (%s) skipped, no MAC found on it' % (vlan_nr, vlan_name))
 
             else:
                 logger.debug('fn=MacAPI/get_macs_from_device : %s : skipping vlan %s (%s)' % (devicename, vlan_nr, vlan_name))
 
-        mac_entries = len(macs[ifindex])
-        total_mac_entries += mac_entries
-        logger.debug("fn=MacAPI/get_macs_from_device : %s mac entries found" % mac_entries)
+            logger.debug("fn=MacAPI/get_macs_from_device : %s mac entries found in vlan %s (%s)" % (mac_entries, vlan_nr, vlan_name))
+            total_mac_entries += mac_entries
 
         logger.debug("fn=MacAPI/get_macs_from_device : returning data, total %s mac entries found" % total_mac_entries)
         return macs, total_mac_entries
