@@ -603,8 +603,7 @@ class InterfaceAPI(Resource):
 
             if showdhcp:
                 dhcpAPI = DHCPsnoopAPI()
-                dhcp_snooping_entries = dhcpAPI.get_dhcp_snooping_from_device(
-                    devicename, m, ro_community)
+                dhcp_snooping_entries = dhcpAPI.get_dhcp_snooping_from_device(devicename, m)
 
             if showtrunks:
                 trunkAPI = TrunkAPI()
@@ -998,7 +997,7 @@ class QuickInterfaceAPI(Resource):
 
         if showdhcp:
             dhcpAPI = DHCPsnoopAPI()
-            dhcp_snooping_entries = dhcpAPI.get_dhcp_snooping_from_device(devicename, m, ro_community)
+            dhcp_snooping_entries = dhcpAPI.get_dhcp_snooping_from_device(devicename, m)
 
         # here, we collect all properties ("columns" in Snimpy speak) from the ifTable
         # we do this with single iteritems() loops, as they use Bulk-Get, which is much faster
@@ -1134,6 +1133,22 @@ class QuickInterfaceAPI(Resource):
                     interfaces[index]['cdp']["cdpCacheDevicePort"] = None
                     interfaces[index]['cdp']["cdpCachePlatform"] = None
                     interfaces[index]['cdp']["cdpCacheLastChange"] = None
+
+
+            # DHCP
+            if showdhcp:
+                # an interface might have more than one MAC-IP binding so
+                # make this is a list
+                interfaces[index]['dhcpsnoop'] = []
+                for entry in dhcp_snooping_entries:
+                    # the code below removes the idx key-value from the dict
+                    # so for the next interface, the equality match below would fail.
+                    # this avoids that case.
+                    if 'interface_idx' in entry:
+                        if entry['interface_idx'] == index:
+                            # no need to add the idx element, it's redundant here
+                            del entry['interface_idx']
+                            interfaces[index]['dhcpsnoop'].append(entry)
 
         # now flatify the dict to an array, because that's what our consumer wants
         interfaces_array = []
@@ -1509,7 +1524,6 @@ class CDPAPI(Resource):
     decorators = [auth.login_required]
 
     def get(self, devicename):
-        #-------------------------
         logger.debug('fn=CDPAPI/get : src=%s, %s' % (request.remote_addr, devicename))
 
         tstart = datetime.now()
@@ -1570,10 +1584,8 @@ class CDPAPI(Resource):
         return deviceinfo
 
     # we create a dict indexed by ifIndex,
-    # it's then easier when having to enrich an interface info when knowing
-    # the ifIndex
+    # it's then easier when having to enrich an interface info when knowing the ifIndex
     def get_cdp_from_device(self, devicename, m, ro_community):
-        #-------------------------
         logger.debug('fn=CDPAPI/get_cdp_from_device : %s' % devicename)
 
         cdps = autovivification.AutoVivification()
@@ -1617,7 +1629,6 @@ class CDPAPI(Resource):
         except snmp.SNMPException, e:
             logger.warn("fn=CDPAPI/get_cdp_from_device : failed SNMP get for CDP : %s" % e)
 
-        # logger.debug("fn=CDPAPI/get_cdp_from_device : returning data")
         return cdps
 
 
@@ -1837,7 +1848,6 @@ class DHCPsnoopAPI(Resource):
     decorators = [auth.login_required]
 
     def get(self, devicename):
-        #-------------------------
         logger.debug('fn=DHCPsnoopAPI/get : src=%s, %s' % (request.remote_addr, devicename))
 
         tstart = datetime.now()
@@ -1861,8 +1871,7 @@ class DHCPsnoopAPI(Resource):
 
         try:
             deviceinfo['sysName'] = m.sysName
-            deviceinfo['dhcpsnoop'] = self.get_dhcp_snooping_from_device(
-                devicename, m, ro_community)
+            deviceinfo['dhcpsnoop'] = self.get_dhcp_snooping_from_device(devicename, m)
 
         except snmp.SNMPException, e:
             logger.error(
@@ -1880,10 +1889,8 @@ class DHCPsnoopAPI(Resource):
         return deviceinfo
 
     # list of DHCP snopped entries. some interfaces (idx) can occur multiple times,
-    # called from DHCPsnoopAPI/get above, and optionally by InterfaceAPI/get
-    # if asked so
-    def get_dhcp_snooping_from_device(self, devicename, m, ro_community):
-        #-------------------------
+    # called from DHCPsnoopAPI/get above, and optionally by InterfaceAPI/get if asked so
+    def get_dhcp_snooping_from_device(self, devicename, m):
 
         inet_address_types = {
             0: 'unknown',
@@ -1903,35 +1910,62 @@ class DHCPsnoopAPI(Resource):
             6: 'destroy'
         }
 
-        logger.debug(
-            'fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s' % devicename)
-        dhcp_snooping_entries = []
+        logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s' % devicename)
         try:
-            for entry in m.cdsBindingsAddrType:
-                vlan = int(entry[0])
-                mac = str(entry[1])
-                # reformat mac: comes as "0:22:90:1b:6:e6" and should be
-                # "00-22-90-1B-06-E6"
+
+            logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s : get cdsBindingsAddrType' % devicename)
+            cdsBindingsAddrType = {}
+            for index, value in m.cdsBindingsAddrType.iteritems():
+                cdsBindingsAddrType[index] = value
+
+            logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s : get cdsBindingsIpAddress' % devicename)
+            cdsBindingsIpAddress = {}
+            for index, value in m.cdsBindingsIpAddress.iteritems():
+                cdsBindingsIpAddress[index] = value
+
+            logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s : get cdsBindingsInterface' % devicename)
+            cdsBindingsInterface = {}
+            for index, value in m.cdsBindingsInterface.iteritems():
+                cdsBindingsInterface[index] = value
+
+            logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s : get cdsBindingsLeasedTime' % devicename)
+            cdsBindingsLeasedTime = {}
+            for index, value in m.cdsBindingsLeasedTime.iteritems():
+                cdsBindingsLeasedTime[index] = value
+
+            logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s : get cdsBindingsStatus' % devicename)
+            cdsBindingsStatus = {}
+            for index, value in m.cdsBindingsStatus.iteritems():
+                cdsBindingsStatus[index] = value
+
+            logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s : get cdsBindingsHostname' % devicename)
+            cdsBindingsHostname = {}
+            for index, value in m.cdsBindingsHostname.iteritems():
+                cdsBindingsHostname[index] = value
+
+            # now loop over the entries and merge the diverse tables
+            dhcp_snooping_entries = []
+            for index in cdsBindingsAddrType:
+                vlan = int(index[0])
+                mac = str(index[1])
+                # reformat mac: comes as "0:22:90:1b:6:e6" and should be "00-22-90-1B-06-E6"
                 mac_e = netaddr.EUI(mac)
                 mac_f = str(mac_e)
                 # add vendor
                 try:
                     vendor = mac_e.oui.registration().org
                 except netaddr.NotRegisteredError as e:
-                    logger.warn('fn=DHCPsnoopAPI: %s : error %s : unknown vendor for %s' % (
-                        devicename, e, mac_f))
+                    logger.warn('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device: %s : error %s : unknown vendor for %s' % (devicename, e, mac_f))
                     vendor = 'unknown'
-                address_type = inet_address_types.get(
-                    m.cdsBindingsAddrType[entry], 'unsupported')
-                ip = util.convert_ip_from_snmp_format(address_type, m.cdsBindingsIpAddress[entry])
-                interface_idx = m.cdsBindingsInterface[entry]
-                leased_time = m.cdsBindingsLeasedTime[entry]
-                status = binding_status.get(
-                    m.cdsBindingsStatus[entry], 'unsupported')
-                hostname = m.cdsBindingsHostname[entry]
+                address_type = inet_address_types.get(cdsBindingsAddrType[index], 'unsupported')
+                ip = util.convert_ip_from_snmp_format(address_type, cdsBindingsIpAddress[index])
+                interface_idx = cdsBindingsInterface[index]
+                leased_time = cdsBindingsLeasedTime[index]
+                status = binding_status.get(cdsBindingsStatus[index], 'unsupported')
+                hostname = cdsBindingsHostname.get(index, None)
 
-                logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device %s : vlan=%s, mac=%s, vendor=%s, address_type=%s, ip=%s, interface_idx=%s, leased_time=%s, status=%s, hostname=%s' %
-                             (devicename, vlan, mac_f, vendor, address_type, ip, interface_idx, leased_time, status, hostname))
+                # logger.debug('TRACE fn=DHCPsnoopAPI/get_dhcp_snooping_from_device %s : vlan=%s, mac=%s, vendor=%s, address_type=%s, ip=%s, interface_idx=%s, leased_time=%s, status=%s, hostname=%s' %
+                #             (devicename, vlan, mac_f, vendor, address_type, ip, interface_idx, leased_time, status, hostname))
                 dhcp_entry = {'interface_idx': interface_idx,
                               'vlan': vlan,
                               'mac': mac_f,
@@ -1943,12 +1977,11 @@ class DHCPsnoopAPI(Resource):
                               'hostname': hostname
                               }
                 dhcp_snooping_entries.append(dhcp_entry)
-        except snmp.SNMPException, e:
-            logger.warn(
-                "fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : failed SNMP get for DHCP snooping : %s" % e)
 
-        logger.debug(
-            "fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : returning data")
+        except snmp.SNMPException, e:
+            logger.warn("fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : failed SNMP get for DHCP snooping : %s" % e)
+
+        logger.debug("fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : returning data : %s entries found" % len(dhcp_snooping_entries))
         return dhcp_snooping_entries
 
 
