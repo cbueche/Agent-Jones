@@ -1116,11 +1116,20 @@ class QuickInterfaceAPI(Resource):
             if showcdp:
                 interfaces[index]['cdp'] = {}
                 if index in cdps:
+                    address_type = cdps[index]['cdpCacheAddressType']
+                    if address_type in ('ipv4', 'ipv6'):
+                        interfaces[index]['cdp']["cdpCacheAddress"] = util.convert_ip_from_snmp_format(address_type, cdps[index]['cdpCacheAddress'])
+                    else:
+                        interfaces[index]['cdp']["cdpCacheAddress"] = 'cannot convert SNMP value for address, unsupported type %s' % address_type
+                    interfaces[index]['cdp']["cdpCacheVersion"] = cdps[index]["cdpCacheVersion"]
                     interfaces[index]['cdp']["cdpCacheDeviceId"] = cdps[index]["cdpCacheDeviceId"]
                     interfaces[index]['cdp']["cdpCacheDevicePort"] = cdps[index]["cdpCacheDevicePort"]
                     interfaces[index]['cdp']["cdpCachePlatform"] = cdps[index]["cdpCachePlatform"]
                     interfaces[index]['cdp']["cdpCacheLastChange"] = cdps[index]["cdpCacheLastChange"]
                 else:
+                    interfaces[index]['cdp']["cdpCacheAddressType"] = None
+                    interfaces[index]['cdp']["cdpCacheAddress"] = None
+                    interfaces[index]['cdp']["cdpCacheVersion"] = None
                     interfaces[index]['cdp']["cdpCacheDeviceId"] = None
                     interfaces[index]['cdp']["cdpCacheDevicePort"] = None
                     interfaces[index]['cdp']["cdpCachePlatform"] = None
@@ -1608,7 +1617,7 @@ class CDPAPI(Resource):
         except snmp.SNMPException, e:
             logger.warn("fn=CDPAPI/get_cdp_from_device : failed SNMP get for CDP : %s" % e)
 
-        logger.debug("fn=CDPAPI/get_cdp_from_device : returning data")
+        # logger.debug("fn=CDPAPI/get_cdp_from_device : returning data")
         return cdps
 
 
