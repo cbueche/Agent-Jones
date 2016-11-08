@@ -912,6 +912,7 @@ class InterfaceAPI(Resource):
 # GET interfaces from a device
 # try to make this one quicker by using bulk-get
 # -----------------------------------------------------------------------------------
+# FIXME at some point, replace the InterfaceAPI above
 class QuickInterfaceAPI(Resource):
     __doc__ = '''{
         "name": "QuickInterfaceAPI",
@@ -1110,6 +1111,20 @@ class QuickInterfaceAPI(Resource):
                 else:
                     interfaces[index]['poeStatus'] = ''
                     interfaces[index]['poePower'] = None
+
+            # CDP
+            if showcdp:
+                interfaces[index]['cdp'] = {}
+                if index in cdps:
+                    interfaces[index]['cdp']["cdpCacheDeviceId"] = cdps[index]["cdpCacheDeviceId"]
+                    interfaces[index]['cdp']["cdpCacheDevicePort"] = cdps[index]["cdpCacheDevicePort"]
+                    interfaces[index]['cdp']["cdpCachePlatform"] = cdps[index]["cdpCachePlatform"]
+                    interfaces[index]['cdp']["cdpCacheLastChange"] = cdps[index]["cdpCacheLastChange"]
+                else:
+                    interfaces[index]['cdp']["cdpCacheDeviceId"] = None
+                    interfaces[index]['cdp']["cdpCacheDevicePort"] = None
+                    interfaces[index]['cdp']["cdpCachePlatform"] = None
+                    interfaces[index]['cdp']["cdpCacheLastChange"] = None
 
         # now flatify the dict to an array, because that's what our consumer wants
         interfaces_array = []
@@ -1497,8 +1512,7 @@ class CDPAPI(Resource):
         deviceinfo = autovivification.AutoVivification()
         deviceinfo['name'] = devicename
 
-        logger.debug(
-            'fn=CDPAPI/get : %s : creating the snimpy manager' % devicename)
+        logger.debug('fn=CDPAPI/get : %s : creating the snimpy manager' % devicename)
         m = M(host=devicename,
               community=ro_community,
               version=2,
@@ -1515,18 +1529,24 @@ class CDPAPI(Resource):
             cdps_organized = []
             for ifindex in cdps:
                 entry = {}
+
                 entry["index"] = ifindex
+
+                address_type = cdps[ifindex]['cdpCacheAddressType']
+                if address_type in ('ipv4', 'ipv6'):
+                    entry["cdpCacheAddress"] = util.convert_ip_from_snmp_format(address_type, cdps[ifindex]['cdpCacheAddress'])
+                else:
+                    entry["cdpCacheAddress"] = 'cannot convert SNMP value for address, unsupported type %s' % address_type
+
+                entry["cdpCacheVersion"] = cdps[ifindex]['cdpCacheVersion']
                 entry["cdpCacheDeviceId"] = cdps[ifindex]['cdpCacheDeviceId']
-                entry["cdpCacheDevicePort"] = cdps[
-                    ifindex]['cdpCacheDevicePort']
+                entry["cdpCacheDevicePort"] = cdps[ifindex]['cdpCacheDevicePort']
                 entry["cdpCachePlatform"] = cdps[ifindex]['cdpCachePlatform']
-                entry["cdpCacheLastChange"] = cdps[
-                    ifindex]['cdpCacheLastChange']
+                entry["cdpCacheLastChange"] = cdps[ifindex]['cdpCacheLastChange']
                 cdps_organized.append(entry)
 
         except snmp.SNMPException, e:
-            logger.error("fn=CDPAPI/get : %s : SNMP get failed : %s" %
-                         (devicename, e))
+            logger.error("fn=CDPAPI/get : %s : SNMP get failed : %s" % (devicename, e))
             return errst.status('ERROR_OP', 'SNMP get failed on %s, cause : %s' % (devicename, e)), 200
 
         tend = datetime.now()
@@ -1549,19 +1569,44 @@ class CDPAPI(Resource):
 
         cdps = autovivification.AutoVivification()
         try:
-            for cdp_idx in m.cdpCacheDeviceId:
-                ifindex = cdp_idx[0]
-                device = m.cdpCacheDeviceId[cdp_idx]
-                interface = m.cdpCacheDevicePort[cdp_idx]
-                platform = m.cdpCachePlatform[cdp_idx]
-                lastchange = m.cdpCacheLastChange[cdp_idx]
-                cdps[ifindex]['cdpCacheDeviceId'] = device
-                cdps[ifindex]['cdpCacheDevicePort'] = interface
-                cdps[ifindex]['cdpCachePlatform'] = platform
-                cdps[ifindex]['cdpCacheLastChange'] = lastchange
-        except:
-            logger.warn(
-                "fn=CDPAPI/get_cdp_from_device : failed SNMP get for CDP")
+            logger.debug('fn=CDPAPI/get_cdp_from_device : %s : get cdpCacheAddressType' % devicename)
+            for index, value in m.cdpCacheAddressType.iteritems():
+                # map to standard values so we can then translate it with our util function
+                # hope it will work with IPv6, no way to test at development time
+                if str(value) == 'ip(1)':
+                    cdps[index[0]]['cdpCacheAddressType'] = 'ipv4'
+                elif str(value) == 'ipv6(20)':
+                    cdps[index[0]]['cdpCacheAddressType'] = 'ipv6'
+                else:
+                    cdps[index[0]]['cdpCacheAddressType'] = 'unsupported' % value
+                    logger.warn('fn=CDPAPI/get_cdp_from_device : %s : unsupported cdpCacheAddressType <%s>' % (devicename, value))
+
+            logger.debug('fn=CDPAPI/get_cdp_from_device : %s : get cdpCacheAddress' % devicename)
+            for index, value in m.cdpCacheAddress.iteritems():
+                cdps[index[0]]['cdpCacheAddress'] = value
+
+            logger.debug('fn=CDPAPI/get_cdp_from_device : %s : get cdpCacheVersion' % devicename)
+            for index, value in m.cdpCacheVersion.iteritems():
+                cdps[index[0]]['cdpCacheVersion'] = value
+
+            logger.debug('fn=CDPAPI/get_cdp_from_device : %s : get cdpCacheDeviceId' % devicename)
+            for index, value in m.cdpCacheDeviceId.iteritems():
+                cdps[index[0]]['cdpCacheDeviceId'] = value
+
+            logger.debug('fn=CDPAPI/get_cdp_from_device : %s : get cdpCacheDevicePort' % devicename)
+            for index, value in m.cdpCacheDevicePort.iteritems():
+                cdps[index[0]]['cdpCacheDevicePort'] = value
+
+            logger.debug('fn=CDPAPI/get_cdp_from_device : %s : get cdpCachePlatform' % devicename)
+            for index, value in m.cdpCachePlatform.iteritems():
+                cdps[index[0]]['cdpCachePlatform'] = value
+
+            logger.debug('fn=CDPAPI/get_cdp_from_device : %s : get cdpCacheLastChange' % devicename)
+            for index, value in m.cdpCacheLastChange.iteritems():
+                cdps[index[0]]['cdpCacheLastChange'] = value
+
+        except snmp.SNMPException, e:
+            logger.warn("fn=CDPAPI/get_cdp_from_device : failed SNMP get for CDP : %s" % e)
 
         logger.debug("fn=CDPAPI/get_cdp_from_device : returning data")
         return cdps

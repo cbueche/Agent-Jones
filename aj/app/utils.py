@@ -47,4 +47,5 @@ class Utilities():
         elif address_type == 'dns':
             return ip_address
         else:
+            logger.warn('IP conversion not yet supported for type %s, ip %s' % (address_type, ip_address))
             return 'IP conversion not yet supported for type %s, ip %s' % (address_type, ip_address)
