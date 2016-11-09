@@ -504,9 +504,9 @@ class DeviceSaveAPI(Resource):
 # -----------------------------------------------------------------------------------
 # GET interfaces from a device
 # -----------------------------------------------------------------------------------
-class InterfaceAPI(Resource):
+class OldInterfaceAPI(Resource):
     __doc__ = '''{
-        "name": "InterfaceAPI",
+        "name": "OldInterfaceAPI",
         "description": "GET interfaces from a device. Adding ?showmac=1 to the URI will list the MAC addresses of devices connected to ports. Adding ?showvlannames=1 will show the vlan names for each vlan. Adding ?showpoe=1 will provide the power consumption for each port. Adding ?showcdp=1 will provide CDP information for each port. Adding ?showdhcp=1 will collect DHCP snooping information for each port. All these options add significant time and overhead to the collection process.",
         "auth": true,
         "auth-type": "BasicAuth",
@@ -530,7 +530,7 @@ class InterfaceAPI(Resource):
                                    help='showdhcp=0|1. Provide the DHCP snooped information for each port.')
         self.reqparse.add_argument('showtrunks', default=0, type=int, required=False,
                                    help='showtrunks=0|1. Provide the trunk information for each port.')
-        super(InterfaceAPI, self).__init__()
+        super(OldInterfaceAPI, self).__init__()
 
     def get(self, devicename):
 
@@ -909,12 +909,11 @@ class InterfaceAPI(Resource):
 
 # -----------------------------------------------------------------------------------
 # GET interfaces from a device
-# try to make this one quicker by using bulk-get
+# uses bulk-get where possible
 # -----------------------------------------------------------------------------------
-# FIXME at some point, replace the InterfaceAPI above
-class QuickInterfaceAPI(Resource):
+class InterfaceAPI(Resource):
     __doc__ = '''{
-        "name": "QuickInterfaceAPI",
+        "name": "InterfaceAPI",
         "description": "FIXME : WARNING : IN CONSTRUCTION. GET interfaces from a device. Adding ?showmac=1 to the URI will list the MAC addresses of devices connected to ports. Adding ?showvlannames=1 will show the vlan names for each vlan. Adding ?showpoe=1 will provide the power consumption for each port. Adding ?showcdp=1 will provide CDP information for each port. Adding ?showdhcp=1 will collect DHCP snooping information for each port. All these options add significant time and overhead to the collection process.",
         "auth": true,
         "auth-type": "BasicAuth",
@@ -939,11 +938,11 @@ class QuickInterfaceAPI(Resource):
                                    help='showdhcp=0|1. Provide the DHCP snooped information for each port.')
         self.reqparse.add_argument('showtrunks', default=0, type=int, required=False,
                                    help='showtrunks=0|1. Provide the trunk information for each port.')
-        super(QuickInterfaceAPI, self).__init__()
+        super(InterfaceAPI, self).__init__()
 
     def get(self, devicename):
 
-        logger.debug('fn=QuickInterfaceAPI/get : src=%s, %s' % (request.remote_addr, devicename))
+        logger.debug('fn=InterfaceAPI/get : src=%s, %s' % (request.remote_addr, devicename))
 
         tstart = datetime.now()
 
@@ -966,7 +965,7 @@ class QuickInterfaceAPI(Resource):
         deviceinfo = autovivification.AutoVivification()
         deviceinfo['name'] = devicename
 
-        logger.debug('fn=QuickInterfaceAPI/get : %s : creating the snimpy manager' % devicename)
+        logger.debug('fn=InterfaceAPI/get : %s : creating the snimpy manager' % devicename)
         # FIXME : the timeout here is probably a bad idea. The sum of apps is likely to fail
         # not specifying "bulk=N" is activating it
         m = M(host=devicename,
@@ -1020,55 +1019,55 @@ class QuickInterfaceAPI(Resource):
         # the "giant dict" indexed by the ifIndex
         interfaces = autovivification.AutoVivification()
 
-        logger.debug('fn=QuickInterfaceAPI/get : %s : get ifDescr' % devicename)
+        logger.debug('fn=InterfaceAPI/get : %s : get ifDescr' % devicename)
         for index, desc in m.ifDescr.iteritems():
-            # logger.debug('fn=QuickInterfaceAPI/get : %s : index = %s, desc = %s' % (devicename, index, desc))
+            # logger.debug('fn=InterfaceAPI/get : %s : index = %s, desc = %s' % (devicename, index, desc))
             interfaces[index]['ifDescr'] = desc
             # FIXME :
             interfaces[index]['physicalIndex'] = entities_if_to_chassis.get(desc, None)
 
-        logger.debug('fn=QuickInterfaceAPI/get : %s : get ifAdminStatus' % devicename)
+        logger.debug('fn=InterfaceAPI/get : %s : get ifAdminStatus' % devicename)
         for index, adminstatus in m.ifAdminStatus.iteritems():
-            # logger.debug('fn=QuickInterfaceAPI/get : %s : index = %s, admin-status = %s' % (devicename, index, adminstatus))
+            # logger.debug('fn=InterfaceAPI/get : %s : index = %s, admin-status = %s' % (devicename, index, adminstatus))
             interfaces[index]['ifAdminStatus'], interfaces[index]['ifAdminStatusText'] = util.translate_status(str(adminstatus))
 
-        logger.debug('fn=QuickInterfaceAPI/get : %s : get ifOperStatus' % devicename)
+        logger.debug('fn=InterfaceAPI/get : %s : get ifOperStatus' % devicename)
         for index, operstatus in m.ifOperStatus.iteritems():
-            # logger.debug('fn=QuickInterfaceAPI/get : %s : index = %s, oper-status = %s' % (devicename, index, operstatus))
+            # logger.debug('fn=InterfaceAPI/get : %s : index = %s, oper-status = %s' % (devicename, index, operstatus))
             interfaces[index]['ifOperStatus'], interfaces[index]['ifOperStatusText'] = util.translate_status(str(operstatus))
 
-        logger.debug('fn=QuickInterfaceAPI/get : %s : get ifType' % devicename)
+        logger.debug('fn=InterfaceAPI/get : %s : get ifType' % devicename)
         for index, iftype in m.ifType.iteritems():
-            # logger.debug('fn=QuickInterfaceAPI/get : %s : index = %s, iftype = %s' % (devicename, index, iftype))
+            # logger.debug('fn=InterfaceAPI/get : %s : index = %s, iftype = %s' % (devicename, index, iftype))
             interfaces[index]['ifType'] = str(iftype)
 
-        logger.debug('fn=QuickInterfaceAPI/get : %s : get ifMtu' % devicename)
+        logger.debug('fn=InterfaceAPI/get : %s : get ifMtu' % devicename)
         for index, ifmtu in m.ifMtu.iteritems():
             # logger.debug('fn=InterfaceAPI/get : %s : index = %s, ifmtu = %s' % (devicename, index, ifmtu))
             interfaces[index]['ifMtu'] = ifmtu
 
-        logger.debug('fn=QuickInterfaceAPI/get : %s : get ifSpeed' % devicename)
+        logger.debug('fn=InterfaceAPI/get : %s : get ifSpeed' % devicename)
         for index, ifspeed in m.ifSpeed.iteritems():
-            # logger.debug('fn=QuickInterfaceAPI/get : %s : index = %s, ifspeed = %s' % (devicename, index, ifspeed))
+            # logger.debug('fn=InterfaceAPI/get : %s : index = %s, ifspeed = %s' % (devicename, index, ifspeed))
             interfaces[index]['ifSpeed'] = ifspeed
 
-        logger.debug('fn=QuickInterfaceAPI/get : %s : get ifAlias' % devicename)
+        logger.debug('fn=InterfaceAPI/get : %s : get ifAlias' % devicename)
         for index, ifalias in m.ifAlias.iteritems():
-            # logger.debug('fn=QuickInterfaceAPI/get : %s : index = %s, ifalias = %s' % (devicename, index, ifalias))
+            # logger.debug('fn=InterfaceAPI/get : %s : index = %s, ifalias = %s' % (devicename, index, ifalias))
             interfaces[index]['ifAlias'] = str(ifalias)
 
-        logger.debug('fn=QuickInterfaceAPI/get : %s : get dot3StatsDuplexStatus' % devicename)
+        logger.debug('fn=InterfaceAPI/get : %s : get dot3StatsDuplexStatus' % devicename)
         for index, duplex in m.dot3StatsDuplexStatus.iteritems():
-            # logger.debug('fn=QuickInterfaceAPI/get : %s : index = %s, duplex = %s' % (devicename, index, duplex))
+            # logger.debug('fn=InterfaceAPI/get : %s : index = %s, duplex = %s' % (devicename, index, duplex))
             interfaces[index]['dot3StatsDuplexStatus'] = str(duplex)
         # add a null value when an index has no entry in the dot3StatsDuplexStatus table
         for interface in interfaces:
             if not 'dot3StatsDuplexStatus' in interfaces[interface]:
                 interfaces[interface]['dot3StatsDuplexStatus'] = None
 
-        logger.debug('fn=QuickInterfaceAPI/get : %s : get vmVlan' % devicename)
+        logger.debug('fn=InterfaceAPI/get : %s : get vmVlan' % devicename)
         for index, vlan_id in m.vmVlan.iteritems():
-            # logger.debug('fn=QuickInterfaceAPI/get : %s : index = %s, vlan_id = %s' % (devicename, index, vlan_id))
+            # logger.debug('fn=InterfaceAPI/get : %s : index = %s, vlan_id = %s' % (devicename, index, vlan_id))
             interfaces[index]['vmVlanNative']['nr'] = vlan_id
         # add a null value when an index has no entry in the vmMembershipTable table
         for interface in interfaces:
@@ -1188,7 +1187,7 @@ class QuickInterfaceAPI(Resource):
                                           tdiff.days * 24 * 3600) * 10 ** 6) / 1000
         deviceinfo['query-duration'] = duration
 
-        logger.info('fn=QuickInterfaceAPI/get : %s : duration=%s' %
+        logger.info('fn=InterfaceAPI/get : %s : duration=%s' %
                     (devicename, deviceinfo['query-duration']))
         return deviceinfo
 
@@ -1199,7 +1198,7 @@ class QuickInterfaceAPI(Resource):
         '''
         # first, create a mapping EntPhyIndex --> port name (eg FastEthernet1/0/6),
         # as we don't have the if-idx in POE table below
-        logger.debug('fn=QuickInterfaceAPI/get_poe : %s : create a mapping EntPhyIndex --> port name' % (devicename))
+        logger.debug('fn=InterfaceAPI/get_poe : %s : create a mapping EntPhyIndex --> port name' % (devicename))
 
         tstart = datetime.now()
 
@@ -1209,13 +1208,13 @@ class QuickInterfaceAPI(Resource):
         for index, value in m.entPhysicalName.iteritems():
             counter += 1
             port_mapping[index] = value
-            # logger.debug('fn=QuickInterfaceAPI/get_poe : %s : port-mapping : ent-idx=%s, port-name=%s' %
+            # logger.debug('fn=InterfaceAPI/get_poe : %s : port-mapping : ent-idx=%s, port-name=%s' %
             #             (devicename, index, port_mapping[index]))
         # logger.info('loop over entPhysicalName.iteritems done, %s entries found' % counter)
 
 
         # then, get the poe info. Returned entries are indexed by the port-name
-        logger.debug('fn=QuickInterfaceAPI/get_poe : %s : get poe info' % (devicename))
+        logger.debug('fn=InterfaceAPI/get_poe : %s : get poe info' % (devicename))
         poe = {}
         # some switches cannot do any POE and answer with "End of MIB was reached"
         # and some clients might ask for POE for those even if the get-device API call
@@ -1225,15 +1224,15 @@ class QuickInterfaceAPI(Resource):
             # new faster, bulkget-way of getting infos
             poe_parts = autovivification.AutoVivification()
 
-            logger.debug('fn=QuickInterfaceAPI/get_poe : %s : get cpeExtPsePortPwrConsumption' % (devicename))
+            logger.debug('fn=InterfaceAPI/get_poe : %s : get cpeExtPsePortPwrConsumption' % (devicename))
             for index, value in m.cpeExtPsePortPwrConsumption.iteritems():
                 poe_parts[index]['cpeExtPsePortPwrConsumption'] = value
 
-            logger.debug('fn=QuickInterfaceAPI/get_poe : %s : get pethPsePortDetectionStatus' % (devicename))
+            logger.debug('fn=InterfaceAPI/get_poe : %s : get pethPsePortDetectionStatus' % (devicename))
             for index, value in m.pethPsePortDetectionStatus.iteritems():
                 poe_parts[index]['pethPsePortDetectionStatus'] = value
 
-            logger.debug('fn=QuickInterfaceAPI/get_poe : %s : get cpeExtPsePortEntPhyIndex' % (devicename))
+            logger.debug('fn=InterfaceAPI/get_poe : %s : get cpeExtPsePortEntPhyIndex' % (devicename))
             for index, value in m.cpeExtPsePortEntPhyIndex.iteritems():
                 poe_parts[index]['cpeExtPsePortEntPhyIndex'] = value
 
@@ -1255,22 +1254,22 @@ class QuickInterfaceAPI(Resource):
                     port_name = ifidx
                 '''
                 logger.debug(
-                    'fn=QuickInterfaceAPI/get_poe : %s : status=%s, power=%s, ent-idx=%s, port-name=%s' %
+                    'fn=InterfaceAPI/get_poe : %s : status=%s, power=%s, ent-idx=%s, port-name=%s' %
                     (devicename, status, consumption, ifidx, port_name))
                 '''
                 poe[port_name] = {'status': status, 'power': consumption}
                 poe_entries += 1
 
-            logger.info('fn=QuickInterfaceAPI/get_poe : %s : got %s poe entries' % (devicename, poe_entries))
+            logger.info('fn=InterfaceAPI/get_poe : %s : got %s poe entries' % (devicename, poe_entries))
 
         except Exception, e:
-            logger.info("fn=QuickInterfaceAPI/get_poe : %s : could not get poe info, probably a device without POE. Status : %s" % (devicename, e))
+            logger.info("fn=InterfaceAPI/get_poe : %s : could not get poe info, probably a device without POE. Status : %s" % (devicename, e))
 
         tend = datetime.now()
         tdiff = tend - tstart
         duration = (tdiff.microseconds + (tdiff.seconds +
                                           tdiff.days * 24 * 3600) * 10 ** 6) / 1000
-        logger.info('fn=QuickInterfaceAPI/get_poe : %s : POE collection duration=%s' % (devicename, duration))
+        logger.info('fn=InterfaceAPI/get_poe : %s : POE collection duration=%s' % (devicename, duration))
 
         return poe
 
@@ -1281,7 +1280,7 @@ class QuickInterfaceAPI(Resource):
         entries_entPhysicalClass = {}
         tstart = datetime.now()
         counter = 0
-        logger.info('fn=QuickInterfaceAPI/collect_entities : %s : loop over entPhysicalClass' % devicename)
+        logger.info('fn=InterfaceAPI/collect_entities : %s : loop over entPhysicalClass' % devicename)
         for index, value in m.entPhysicalClass.iteritems():
             # logger.debug('TRACE : entPhysicalClass entry %s, %s' % (index, value))
             entries_entPhysicalClass[index] = value
@@ -1290,13 +1289,13 @@ class QuickInterfaceAPI(Resource):
         tdiff = tend - tstart
         duration = (tdiff.microseconds + (tdiff.seconds +
                                           tdiff.days * 24 * 3600) * 10 ** 6) / 1000
-        logger.info('fn=QuickInterfaceAPI/collect_entities : %s : loop over entPhysicalClass done in %s, %s entries found' % (devicename, duration, counter))
+        logger.info('fn=InterfaceAPI/collect_entities : %s : loop over entPhysicalClass done in %s, %s entries found' % (devicename, duration, counter))
 
         # entPhysicalName
         entries_entPhysicalName = {}
         tstart = datetime.now()
         counter = 0
-        logger.info('fn=QuickInterfaceAPI/collect_entities : %s : loop over entPhysicalName' % devicename)
+        logger.info('fn=InterfaceAPI/collect_entities : %s : loop over entPhysicalName' % devicename)
         for index, value in m.entPhysicalName.iteritems():
             # logger.debug('TRACE : entPhysicalName entry %s, %s' % (index, value))
             entries_entPhysicalName[index] = value
@@ -1305,13 +1304,13 @@ class QuickInterfaceAPI(Resource):
         tdiff = tend - tstart
         duration = (tdiff.microseconds + (tdiff.seconds +
                                           tdiff.days * 24 * 3600) * 10 ** 6) / 1000
-        logger.info('fn=QuickInterfaceAPI/collect_entities : %s : loop over entPhysicalName done in %s, %s entries found' % (devicename, duration, counter))
+        logger.info('fn=InterfaceAPI/collect_entities : %s : loop over entPhysicalName done in %s, %s entries found' % (devicename, duration, counter))
 
         # entPhysicalContainedIn
         entries_entPhysicalContainedIn = {}
         tstart = datetime.now()
         counter = 0
-        logger.info('fn=QuickInterfaceAPI/collect_entities : %s : loop over entPhysicalContainedIn' % devicename)
+        logger.info('fn=InterfaceAPI/collect_entities : %s : loop over entPhysicalContainedIn' % devicename)
         for index, value in m.entPhysicalContainedIn.iteritems():
             # logger.debug('TRACE : entPhysicalContainedIn entry %s, %s' % (index, value))
             entries_entPhysicalContainedIn[index] = value
@@ -1320,7 +1319,7 @@ class QuickInterfaceAPI(Resource):
         tdiff = tend - tstart
         duration = (tdiff.microseconds + (tdiff.seconds +
                                           tdiff.days * 24 * 3600) * 10 ** 6) / 1000
-        logger.info('fn=QuickInterfaceAPI/collect_entities : %s : loop over entPhysicalContainedIn done in %s, %s entries found' % (devicename, duration, counter))
+        logger.info('fn=InterfaceAPI/collect_entities : %s : loop over entPhysicalContainedIn done in %s, %s entries found' % (devicename, duration, counter))
 
         return ({'entries_entPhysicalClass': entries_entPhysicalClass,
                  'entries_entPhysicalName': entries_entPhysicalName,
@@ -1334,7 +1333,7 @@ class QuickInterfaceAPI(Resource):
         # - if something is not in class table --> it will be ignored by this loop
         # - if something is in class table but has no name or cin --> None
 
-        logger.info('fn=QuickInterfaceAPI/merge_entities : %s : start merge entities' % devicename)
+        logger.info('fn=InterfaceAPI/merge_entities : %s : start merge entities' % devicename)
 
         merged_entities = autovivification.AutoVivification()
         for idx, value in entities['entries_entPhysicalClass'].iteritems():
@@ -1354,7 +1353,7 @@ class QuickInterfaceAPI(Resource):
         # we go over the entity table, find out each interface (class=port)
         # and then find the enclosing-chassis of this interface
 
-        logger.info('fn=QuickInterfaceAPI/get_ports : %s : get_ports' % devicename)
+        logger.info('fn=InterfaceAPI/get_ports : %s : get_ports' % devicename)
 
         port_table = {}
         for idx, entry in merged_entities.iteritems():
@@ -2649,11 +2648,11 @@ doc.add(loads(InterfaceAPI.__doc__),
         '/aj/api/v1/interfaces/<string:devicename>',
         InterfaceAPI.__dict__['methods'])
 
-api.add_resource(QuickInterfaceAPI,
-                 '/aj/api/v2/interfaces/<string:devicename>')
-doc.add(loads(QuickInterfaceAPI.__doc__),
+api.add_resource(OldInterfaceAPI,
+                 '/aj/api/v1old/interfaces/<string:devicename>')
+doc.add(loads(OldInterfaceAPI.__doc__),
         '/aj/api/v2/interfaces/<string:devicename>',
-        QuickInterfaceAPI.__dict__['methods'])
+        OldInterfaceAPI.__dict__['methods'])
 
 api.add_resource(InterfaceCounterAPI,
                  '/aj/api/v1/interface/counter/<string:devicename>/<string:ifindex>')
