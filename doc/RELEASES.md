@@ -9,6 +9,7 @@ Release notes
 - replace deprecated flask.ext.httpauth by flask_httpauth
 - enhance MIB-load logged information during start
 - replace SNMP get by SNMP bulk-get
+- move several debug statements to the TRACE level
 
 11.5.2016
 ---------

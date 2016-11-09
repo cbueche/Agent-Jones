@@ -10,6 +10,7 @@ import os
 # default values
 class Config(object):
     DEBUG = False
+    TRACE = False
     ENVI = 'base'
 
     # those are used to protect the web-service with Basic-Auth, passed by Apache
@@ -70,6 +71,7 @@ class IntegrationConfig(Config):
 # values for devel
 class DevelopmentConfig(Config):
     DEBUG = True
+    TRACE = False
     ENVI = 'development'
     BIND_PORT = 5000
 
