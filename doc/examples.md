@@ -20,10 +20,14 @@ Point your browser to $AJ_URL/xdoc/
 
 ## Pinging a device
 
+### Request
+
     curl -X "POST" "$AJ_URL/aj/api/v1/device/$DEVICE/action" \
      -H "Content-Type: multipart/form-data; charset=utf-8" \
      -u "$AJ_USER:$AJ_PASSWORD" \
      -F "type=ping"
+
+### Response
 
 ```json
 {
@@ -40,8 +44,12 @@ Point your browser to $AJ_URL/xdoc/
 
 ## Getting a device global information
 
+### Request
+
     curl -X "GET" "$AJ_URL/aj/api/v1/device/$DEVICE" \
      -u "$AJ_USER:$AJ_PASSWORD"
+
+### Response
 
 ```json
 {
@@ -215,8 +223,12 @@ Point your browser to $AJ_URL/xdoc/
 
 ## Getting the interface list of a device
 
+### Request
+
     curl -X "GET" "$AJ_URL/aj/api/v1/interfaces/$DEVICE" \
      -u "$AJ_USER:$AJ_PASSWORD"
+
+### Response
 
 In the response, the `physicalIndex` value can be used to identify the enclosing stack member from the list obtained above.
 
