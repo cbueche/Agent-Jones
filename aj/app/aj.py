@@ -17,7 +17,7 @@ Repository & documentation : https://github.com/cbueche/Agent-Jones
 # -----------------------------------------------------------------------------------
 
 # update doc/RELEASES.md when touching this
-__version__ = '26.10.2016'
+__version__ = '9.11.2016'
 
 from flask import Flask, url_for, make_response, jsonify, send_from_directory, request
 from flask import render_template

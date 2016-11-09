@@ -1,14 +1,14 @@
 Release notes
 =============
 
-26.10.2016
-----------
+9.11.2016
+---------
 
 - update enterprise-numbers.json
 - replace deprecated flask.ext.restful by flask_restful
 - replace deprecated flask.ext.httpauth by flask_httpauth
 - enhance MIB-load logged information during start
-- FIXME : quickIF
+- replace SNMP get by SNMP bulk-get
 
 11.5.2016
 ---------
