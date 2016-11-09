@@ -228,6 +228,8 @@ Point your browser to $AJ_URL/xdoc/
     curl -X "GET" "$AJ_URL/aj/api/v1/interfaces/$DEVICE" \
      -u "$AJ_USER:$AJ_PASSWORD"
 
+Remark: you can add plenty of boolean flags to the request to collect more information and receive them as properties of the response. See the API doc for details.
+
 ### Response
 
 In the response, the `physicalIndex` value can be used to identify the enclosing stack member from the list obtained above.
