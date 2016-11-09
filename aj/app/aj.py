@@ -17,17 +17,18 @@ Repository & documentation : https://github.com/cbueche/Agent-Jones
 # -----------------------------------------------------------------------------------
 
 # update doc/RELEASES.md when touching this
-__version__ = '11.5.2016'
+__version__ = '9.11.2016'
 
 from flask import Flask, url_for, make_response, jsonify, send_from_directory, request
 from flask import render_template
 from flask.json import loads
 
-from flask.ext import restful
-from flask.ext.restful import reqparse
+from flask_restful import Resource, Api
+from flask_restful import reqparse
 
-from flask.ext.httpauth import HTTPBasicAuth
+from flask_httpauth import HTTPBasicAuth
 auth = HTTPBasicAuth()
+
 
 import time
 from datetime import datetime
@@ -148,7 +149,7 @@ class DocCollection():
 # -----------------------------------------------------------------------------------
 # GET on a single device
 # -----------------------------------------------------------------------------------
-class DeviceAPI(restful.Resource):
+class DeviceAPI(Resource):
     __doc__ = '''{
         "name": "DeviceAPI",
         "description": "GET info from a single device.",
@@ -303,7 +304,7 @@ class DeviceAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 # POST on a single $device/action
 # -----------------------------------------------------------------------------------
-class DeviceActionAPI(restful.Resource):
+class DeviceActionAPI(Resource):
     __doc__ = '''{
         "name": "DeviceActionAPI",
         "description": "POST action to a single device. Only possible action for now is ping",
@@ -382,7 +383,7 @@ class DeviceActionAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 # PUT on a single device : save the running-config to startup-config
 # -----------------------------------------------------------------------------------
-class DeviceSaveAPI(restful.Resource):
+class DeviceSaveAPI(Resource):
     '''
     {
         "name": "DeviceSaveAPI",
@@ -503,9 +504,9 @@ class DeviceSaveAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 # GET interfaces from a device
 # -----------------------------------------------------------------------------------
-class InterfaceAPI(restful.Resource):
+class OldInterfaceAPI(Resource):
     __doc__ = '''{
-        "name": "InterfaceAPI",
+        "name": "OldInterfaceAPI",
         "description": "GET interfaces from a device. Adding ?showmac=1 to the URI will list the MAC addresses of devices connected to ports. Adding ?showvlannames=1 will show the vlan names for each vlan. Adding ?showpoe=1 will provide the power consumption for each port. Adding ?showcdp=1 will provide CDP information for each port. Adding ?showdhcp=1 will collect DHCP snooping information for each port. All these options add significant time and overhead to the collection process.",
         "auth": true,
         "auth-type": "BasicAuth",
@@ -529,7 +530,7 @@ class InterfaceAPI(restful.Resource):
                                    help='showdhcp=0|1. Provide the DHCP snooped information for each port.')
         self.reqparse.add_argument('showtrunks', default=0, type=int, required=False,
                                    help='showtrunks=0|1. Provide the trunk information for each port.')
-        super(InterfaceAPI, self).__init__()
+        super(OldInterfaceAPI, self).__init__()
 
     def get(self, devicename):
 
@@ -602,8 +603,7 @@ class InterfaceAPI(restful.Resource):
 
             if showdhcp:
                 dhcpAPI = DHCPsnoopAPI()
-                dhcp_snooping_entries = dhcpAPI.get_dhcp_snooping_from_device(
-                    devicename, m, ro_community)
+                dhcp_snooping_entries = dhcpAPI.get_dhcp_snooping_from_device(devicename, m)
 
             if showtrunks:
                 trunkAPI = TrunkAPI()
@@ -852,7 +852,7 @@ class InterfaceAPI(restful.Resource):
 
         merged_entities = autovivification.AutoVivification()
         for idx, value in entities['entries_entPhysicalClass'].iteritems():
-            logger.debug('merging index %s of class %s' % (idx, value))
+            logger.debug('%s : merging index %s of class %s' % (devicename, idx, value))
             merged_entities[idx]['class'] = value
             merged_entities[idx]['name'] = entities['entries_entPhysicalName'].get(idx, None)
             merged_entities[idx]['cin'] = entities['entries_entPhysicalContainedIn'].get(idx, None)
@@ -874,12 +874,497 @@ class InterfaceAPI(restful.Resource):
         for idx, entry in merged_entities.iteritems():
             # only ports
             if entry['class'] == 10:  # entPhysicalClass=10 are ports (interfaces of some sort)
-                logger.debug('%s : port %s' % (devicename, entry['name']))
+                logger.debug('%s : search enclosing chassis for port <%s>' % (devicename, entry['name']))
                 # entPhysicalClass=3 are chassis, this function
+                chassis_idx = self.find_parent_of_type(devicename, idx, 3, merged_entities)
+                port_table[entry['name']] = chassis_idx
+
+        logger.info('%s : done get_ports, found %s ports' % (devicename, len(port_table)))
+
+        return port_table
+
+    # -----------------------------------------------------------------------------------
+    def find_parent_of_type(self, devicename, port_idx, searched_parent_type, merged_entities):
+
+        # this is a recursive function walking up the entity tree to find
+        # the first ancestor of desired type
+
+        logger.debug('%s : find_parent_of_type %s for entity %s' % (devicename, searched_parent_type, port_idx))
+
+        parent_idx = merged_entities[port_idx]['cin']
+        logger.debug('%s : parent of port %s is %s' % (devicename, port_idx, parent_idx))
+
+        type_of_parent = merged_entities[parent_idx]['class']
+        logger.debug('%s : type of parent %s is %s' % (devicename, parent_idx, type_of_parent))
+
+        # is the parent already the desired type ?
+        if type_of_parent == searched_parent_type:
+            # yes !
+            logger.debug('%s : parent %s has the searched type %s' % (devicename, parent_idx, searched_parent_type))
+            return parent_idx
+        else:
+            # no, go deeper
+            return self.find_parent_of_type(devicename, parent_idx, 3, merged_entities)
+
+
+# -----------------------------------------------------------------------------------
+# GET interfaces from a device
+# uses bulk-get where possible
+# -----------------------------------------------------------------------------------
+class InterfaceAPI(Resource):
+    __doc__ = '''{
+        "name": "InterfaceAPI",
+        "description": "GET interfaces from a device. Adding ?showmac=1 to the URI will list the MAC addresses of devices connected to ports. Adding ?showvlannames=1 will show the vlan names for each vlan. Adding ?showpoe=1 will provide the power consumption for each port. Adding ?showcdp=1 will provide CDP information for each port. Adding ?showdhcp=1 will collect DHCP snooping information for each port. Adding showtrunks=1 will collect trunk attributes for each interfaces. All these options add significant time and overhead to the collection process.",
+        "auth": true,
+        "auth-type": "BasicAuth",
+        "params": [],
+        "returns": "A list of device interfaces."
+    }'''
+    decorators = [auth.login_required]
+
+    # check arguments
+    def __init__(self):
+        self.reqparse = reqparse.RequestParser()
+        self.reqparse.add_argument('showmac', default=0, type=int, required=False,
+                                   help='showmac=0|1. List the MAC addresses of devices connected to ports.')
+        self.reqparse.add_argument('showvlannames', default=0, type=int,
+                                   required=False,
+                                   help='showvlannames=0|1. Show the vlan names for each vlan.')
+        self.reqparse.add_argument('showpoe', default=0, type=int, required=False,
+                                   help='showpoe=0|1. Provide the power consumption for each port.')
+        self.reqparse.add_argument('showcdp', default=0, type=int, required=False,
+                                   help='showcdp=0|1. Provide the CDP information for each port.')
+        self.reqparse.add_argument('showdhcp', default=0, type=int, required=False,
+                                   help='showdhcp=0|1. Provide the DHCP snooped information for each port.')
+        self.reqparse.add_argument('showtrunks', default=0, type=int, required=False,
+                                   help='showtrunks=0|1. Provide the trunk information for each port.')
+        super(InterfaceAPI, self).__init__()
+
+    def get(self, devicename):
+
+        logger.debug('fn=InterfaceAPI/get : src=%s, %s' % (request.remote_addr, devicename))
+
+        tstart = datetime.now()
+
+        # decode query parameters and transform them into booleans. Does
+        # apparently not work if done in reqparse.add_argument() above
+        args = self.reqparse.parse_args()
+        showmac = True if args['showmac'] else False
+        showvlannames = True if args['showvlannames'] else False
+        showpoe = True if args['showpoe'] else False
+        showcdp = True if args['showcdp'] else False
+        showdhcp = True if args['showdhcp'] else False
+        showtrunks = True if args['showtrunks'] else False
+        logger.info('fn=InterfaceAPI/get : %s : showmac=%s, showvlannames=%s, showpoe=%s, showcdp=%s, showdhcp=%s, showtrunks=%s' %
+                    (devicename, showmac, showvlannames, showpoe, showcdp, showdhcp, showtrunks))
+
+        ro_community = credmgr.get_credentials(devicename)['ro_community']
+        if not check.check_snmp(M, devicename, ro_community, 'RO'):
+            return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
+
+        deviceinfo = autovivification.AutoVivification()
+        deviceinfo['name'] = devicename
+
+        logger.debug('fn=InterfaceAPI/get : %s : creating the snimpy manager' % devicename)
+        # FIXME : the timeout here is probably a bad idea. The sum of apps is likely to fail
+        # not specifying "bulk=N" is activating it
+        m = M(host=devicename,
+              community=ro_community,
+              version=2,
+              timeout=app.config['SNMP_TIMEOUT'],
+              retries=app.config['SNMP_RETRIES'],
+              cache=app.config['SNMP_CACHE'],
+              none=True)
+
+        deviceinfo['sysName'] = m.sysName
+
+        # collect the mapping between interfaces and entities
+        # constructs a table (dict) 'ifname' --> 'enclosing-chassis'
+        # e.g. {<String: GigabitEthernet1/0/5>: <Integer: 1001>, etc}
+        entities = self.collect_entities(m, devicename)
+        merged_entities = self.merge_entities(entities, devicename)
+        entities_if_to_chassis = self.get_ports(merged_entities, devicename)
+
+        # get the mac list
+        if showmac:
+            macAPI = MacAPI()
+            macs, total_mac_entries = macAPI.get_macs_from_device(devicename, m, ro_community)
+
+        # collect the voice vlans
+        if showvlannames:
+            vlanAPI = vlanlistAPI()
+            voice_vlans = vlanAPI.get_voice_vlans(devicename, m, ro_community)
+            data_vlans = vlanAPI.get_vlans(devicename, m, ro_community)
+
+        if showpoe:
+            poe = self.get_poe(devicename, m)
+
+        if showcdp:
+            cdpAPI = CDPAPI()
+            cdps = cdpAPI.get_cdp_from_device(devicename, m, ro_community)
+
+        if showdhcp:
+            dhcpAPI = DHCPsnoopAPI()
+            dhcp_snooping_entries = dhcpAPI.get_dhcp_snooping_from_device(devicename, m)
+
+        if showtrunks:
+            trunkAPI = TrunkAPI()
+            trunks_entries = trunkAPI.get_trunks_from_device(devicename, m, ro_community)
+
+        # here, we collect all properties ("columns" in Snimpy speak) from the ifTable
+        # we do this with single iteritems() loops, as they use Bulk-Get, which is much faster
+        # the results of each loop enriches a "giant dict".
+        # At the end, we do a final loop to add the stuff collected above
+
+        # the "giant dict" indexed by the ifIndex
+        interfaces = autovivification.AutoVivification()
+
+        logger.debug('fn=InterfaceAPI/get : %s : get ifDescr' % devicename)
+        for index, desc in m.ifDescr.iteritems():
+            logger.trace('fn=InterfaceAPI/get : %s : index = %s, desc = %s' % (devicename, index, desc))
+            interfaces[index]['ifDescr'] = desc
+            # FIXME :
+            interfaces[index]['physicalIndex'] = entities_if_to_chassis.get(desc, None)
+
+        logger.debug('fn=InterfaceAPI/get : %s : get ifAdminStatus' % devicename)
+        for index, adminstatus in m.ifAdminStatus.iteritems():
+            logger.trace('fn=InterfaceAPI/get : %s : index = %s, admin-status = %s' % (devicename, index, adminstatus))
+            interfaces[index]['ifAdminStatus'], interfaces[index]['ifAdminStatusText'] = util.translate_status(str(adminstatus))
+
+        logger.debug('fn=InterfaceAPI/get : %s : get ifOperStatus' % devicename)
+        for index, operstatus in m.ifOperStatus.iteritems():
+            logger.trace('fn=InterfaceAPI/get : %s : index = %s, oper-status = %s' % (devicename, index, operstatus))
+            interfaces[index]['ifOperStatus'], interfaces[index]['ifOperStatusText'] = util.translate_status(str(operstatus))
+
+        logger.debug('fn=InterfaceAPI/get : %s : get ifType' % devicename)
+        for index, iftype in m.ifType.iteritems():
+            logger.trace('fn=InterfaceAPI/get : %s : index = %s, iftype = %s' % (devicename, index, iftype))
+            interfaces[index]['ifType'] = str(iftype)
+
+        logger.debug('fn=InterfaceAPI/get : %s : get ifMtu' % devicename)
+        for index, ifmtu in m.ifMtu.iteritems():
+            logger.trace('fn=InterfaceAPI/get : %s : index = %s, ifmtu = %s' % (devicename, index, ifmtu))
+            interfaces[index]['ifMtu'] = ifmtu
+
+        logger.debug('fn=InterfaceAPI/get : %s : get ifSpeed' % devicename)
+        for index, ifspeed in m.ifSpeed.iteritems():
+            logger.trace('fn=InterfaceAPI/get : %s : index = %s, ifspeed = %s' % (devicename, index, ifspeed))
+            interfaces[index]['ifSpeed'] = ifspeed
+
+        logger.debug('fn=InterfaceAPI/get : %s : get ifAlias' % devicename)
+        for index, ifalias in m.ifAlias.iteritems():
+            logger.trace('fn=InterfaceAPI/get : %s : index = %s, ifalias = %s' % (devicename, index, ifalias))
+            interfaces[index]['ifAlias'] = str(ifalias)
+
+        logger.debug('fn=InterfaceAPI/get : %s : get dot3StatsDuplexStatus' % devicename)
+        for index, duplex in m.dot3StatsDuplexStatus.iteritems():
+            logger.trace('fn=InterfaceAPI/get : %s : index = %s, duplex = %s' % (devicename, index, duplex))
+            interfaces[index]['dot3StatsDuplexStatus'] = str(duplex)
+        # add a null value when an index has no entry in the dot3StatsDuplexStatus table
+        for interface in interfaces:
+            if not 'dot3StatsDuplexStatus' in interfaces[interface]:
+                interfaces[interface]['dot3StatsDuplexStatus'] = None
+
+        logger.debug('fn=InterfaceAPI/get : %s : get vmVlan' % devicename)
+        for index, vlan_id in m.vmVlan.iteritems():
+            logger.trace('fn=InterfaceAPI/get : %s : index = %s, vlan_id = %s' % (devicename, index, vlan_id))
+            interfaces[index]['vmVlanNative']['nr'] = vlan_id
+        # add a null value when an index has no entry in the vmMembershipTable table
+        for interface in interfaces:
+            if not 'vmVlanNative' in interfaces[interface]:
+                interfaces[interface]['vmVlanNative']['nr'] = None
+
+        # now we add the stuff that we collected above the ifTable/get-bulk operations
+        for index in interfaces:
+
+            # ease the flatify below
+            interfaces[index]['index'] = index
+
+            # VLANs (data and voice)
+            if showvlannames:
+
+                # data vlans
+                # use a temp variable for clarity
+                vtpVlanIndex = interfaces[index]['vmVlanNative']['nr']
+                if vtpVlanIndex in data_vlans:
+                    data_vlan_name = data_vlans[vtpVlanIndex]['name']
+                else:
+                    data_vlan_name = None
+                interfaces[index]['vmVlanNative']['name'] = data_vlan_name
+
+                # voice vlans
+                if index in voice_vlans:
+                    voice_vlan_nr = int(voice_vlans[index])
+                else:
+                    voice_vlan_nr = 0
+                interfaces[index]['vmVoiceVlanId']['nr'] = voice_vlan_nr
+                if voice_vlan_nr in data_vlans:
+                    voice_vlan_name = data_vlans[voice_vlan_nr]['name']
+                else:
+                    voice_vlan_name = ''
+                interfaces[index]['vmVoiceVlanId']['name'] = voice_vlan_name
+
+            else:
+
+                interfaces[index]['vmVlanNative'] = {'nr': 0, 'name': None}
+                interfaces[index]['vmVoiceVlanId'] = {'nr': 0, 'name': None}
+
+            # Macs
+            if showmac:
+                if index in macs:
+                    interfaces[index]['macs'] = macs[index]
+                else:
+                    interfaces[index]['macs'] = []
+
+            # POE
+            if showpoe:
+                if interfaces[index]['ifDescr'] in poe:
+                    interfaces[index]['poeStatus'] = str(poe[interfaces[index]['ifDescr']]['status'])
+                    interfaces[index]['poePower'] = poe[interfaces[index]['ifDescr']]['power']
+                else:
+                    interfaces[index]['poeStatus'] = ''
+                    interfaces[index]['poePower'] = None
+
+            # CDP
+            if showcdp:
+                interfaces[index]['cdp'] = {}
+                if index in cdps:
+                    address_type = cdps[index]['cdpCacheAddressType']
+                    if address_type in ('ipv4', 'ipv6'):
+                        interfaces[index]['cdp']["cdpCacheAddress"] = util.convert_ip_from_snmp_format(address_type, cdps[index]['cdpCacheAddress'])
+                    else:
+                        interfaces[index]['cdp']["cdpCacheAddress"] = 'cannot convert SNMP value for address, unsupported type %s' % address_type
+                    interfaces[index]['cdp']["cdpCacheVersion"] = cdps[index]["cdpCacheVersion"]
+                    interfaces[index]['cdp']["cdpCacheDeviceId"] = cdps[index]["cdpCacheDeviceId"]
+                    interfaces[index]['cdp']["cdpCacheDevicePort"] = cdps[index]["cdpCacheDevicePort"]
+                    interfaces[index]['cdp']["cdpCachePlatform"] = cdps[index]["cdpCachePlatform"]
+                    interfaces[index]['cdp']["cdpCacheLastChange"] = cdps[index]["cdpCacheLastChange"]
+                else:
+                    interfaces[index]['cdp']["cdpCacheAddressType"] = None
+                    interfaces[index]['cdp']["cdpCacheAddress"] = None
+                    interfaces[index]['cdp']["cdpCacheVersion"] = None
+                    interfaces[index]['cdp']["cdpCacheDeviceId"] = None
+                    interfaces[index]['cdp']["cdpCacheDevicePort"] = None
+                    interfaces[index]['cdp']["cdpCachePlatform"] = None
+                    interfaces[index]['cdp']["cdpCacheLastChange"] = None
+
+
+            # DHCP
+            if showdhcp:
+                # an interface might have more than one MAC-IP binding so
+                # make this is a list
+                interfaces[index]['dhcpsnoop'] = []
+                for entry in dhcp_snooping_entries:
+                    # the code below removes the idx key-value from the dict
+                    # so for the next interface, the equality match below would fail.
+                    # this avoids that case.
+                    if 'interface_idx' in entry:
+                        if entry['interface_idx'] == index:
+                            # no need to add the idx element, it's redundant here
+                            del entry['interface_idx']
+                            interfaces[index]['dhcpsnoop'].append(entry)
+
+            # Trunks
+            if showtrunks:
+                if index in trunks_entries:
+                    interfaces[index]['trunkAdminState'] = trunks_entries[index]['trunkAdminState']
+                    interfaces[index]['trunkOperState'] = trunks_entries[index]['trunkOperState']
+                else:
+                    interfaces[index]['trunkAdminState'] = ''
+                    interfaces[index]['trunkOperState'] = ''
+
+
+        # now flatify the dict to an array, because that's what our consumer wants
+        interfaces_array = []
+        for index in interfaces:
+            interfaces_array.append(interfaces[index])
+
+        deviceinfo['interfaces'] = interfaces_array
+
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds +
+                                          tdiff.days * 24 * 3600) * 10 ** 6) / 1000
+        deviceinfo['query-duration'] = duration
+
+        logger.info('fn=InterfaceAPI/get : %s : duration=%s' %
+                    (devicename, deviceinfo['query-duration']))
+        return deviceinfo
+
+    def get_poe(self, devicename, m):
+        ''' get the POE info using the CISCO-POWER-ETHERNET-EXT-MIB and Entity-MIB
+
+            return a list of poe entries, indexed by port name (eg FastEthernet1/0/15)
+        '''
+        # first, create a mapping EntPhyIndex --> port name (eg FastEthernet1/0/6),
+        # as we don't have the if-idx in POE table below
+        logger.debug('fn=InterfaceAPI/get_poe : %s : create a mapping EntPhyIndex --> port name' % (devicename))
+
+        tstart = datetime.now()
+
+        port_mapping = {}
+        logger.trace('%s : loop over entPhysicalName.iteritems' % devicename)
+        counter = 0
+        for index, value in m.entPhysicalName.iteritems():
+            counter += 1
+            port_mapping[index] = value
+            logger.trace('fn=InterfaceAPI/get_poe : %s : port-mapping : ent-idx=%s, port-name=%s' %
+                         (devicename, index, port_mapping[index]))
+        logger.trace('loop over entPhysicalName.iteritems done, %s entries found' % counter)
+
+
+        # then, get the poe info. Returned entries are indexed by the port-name
+        logger.debug('fn=InterfaceAPI/get_poe : %s : get poe info' % (devicename))
+        poe = {}
+        # some switches cannot do any POE and answer with "End of MIB was reached"
+        # and some clients might ask for POE for those even if the get-device API call
+        # said "no POE". In this case, only log and return an empty table
+        try:
+
+            # new faster, bulkget-way of getting infos
+            poe_parts = autovivification.AutoVivification()
+
+            logger.debug('fn=InterfaceAPI/get_poe : %s : get cpeExtPsePortPwrConsumption' % (devicename))
+            for index, value in m.cpeExtPsePortPwrConsumption.iteritems():
+                poe_parts[index]['cpeExtPsePortPwrConsumption'] = value
+
+            logger.debug('fn=InterfaceAPI/get_poe : %s : get pethPsePortDetectionStatus' % (devicename))
+            for index, value in m.pethPsePortDetectionStatus.iteritems():
+                poe_parts[index]['pethPsePortDetectionStatus'] = value
+
+            logger.debug('fn=InterfaceAPI/get_poe : %s : get cpeExtPsePortEntPhyIndex' % (devicename))
+            for index, value in m.cpeExtPsePortEntPhyIndex.iteritems():
+                poe_parts[index]['cpeExtPsePortEntPhyIndex'] = value
+
+            # merge the tables to have it indexed by cpeExtPsePortEntPhyIndex so we can then
+            # re-merge with port_mapping collected above
+            poe_parts_merged = autovivification.AutoVivification()
+            for index in poe_parts:
+                poe_parts_merged[poe_parts[index]['cpeExtPsePortEntPhyIndex']]['Consumption'] = poe_parts[index]['cpeExtPsePortPwrConsumption']
+                poe_parts_merged[poe_parts[index]['cpeExtPsePortEntPhyIndex']]['Status'] = poe_parts[index]['pethPsePortDetectionStatus']
+
+            # and now the final merge
+            poe_entries = 0
+            for ifidx in poe_parts_merged:
+                consumption = poe_parts_merged[ifidx]['Consumption']
+                status = poe_parts_merged[ifidx]['Status']
+                if ifidx in port_mapping:
+                    port_name = port_mapping[ifidx]
+                else:
+                    port_name = ifidx
+                '''
+                logger.debug(
+                    'fn=InterfaceAPI/get_poe : %s : status=%s, power=%s, ent-idx=%s, port-name=%s' %
+                    (devicename, status, consumption, ifidx, port_name))
+                '''
+                poe[port_name] = {'status': status, 'power': consumption}
+                poe_entries += 1
+
+            logger.info('fn=InterfaceAPI/get_poe : %s : got %s poe entries' % (devicename, poe_entries))
+
+        except Exception, e:
+            logger.info("fn=InterfaceAPI/get_poe : %s : could not get poe info, probably a device without POE. Status : %s" % (devicename, e))
+
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds +
+                                          tdiff.days * 24 * 3600) * 10 ** 6) / 1000
+        logger.info('fn=InterfaceAPI/get_poe : %s : POE collection duration=%s' % (devicename, duration))
+
+        return poe
+
+    # -----------------------------------------------------------------------------------
+    def collect_entities(self, m, devicename):
+
+        # entPhysicalClass
+        entries_entPhysicalClass = {}
+        tstart = datetime.now()
+        counter = 0
+        logger.info('fn=InterfaceAPI/collect_entities : %s : loop over entPhysicalClass' % devicename)
+        for index, value in m.entPhysicalClass.iteritems():
+            logger.trace('entPhysicalClass entry %s, %s' % (index, value))
+            entries_entPhysicalClass[index] = value
+            counter += 1
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds +
+                                          tdiff.days * 24 * 3600) * 10 ** 6) / 1000
+        logger.info('fn=InterfaceAPI/collect_entities : %s : loop over entPhysicalClass done in %s, %s entries found' % (devicename, duration, counter))
+
+        # entPhysicalName
+        entries_entPhysicalName = {}
+        tstart = datetime.now()
+        counter = 0
+        logger.info('fn=InterfaceAPI/collect_entities : %s : loop over entPhysicalName' % devicename)
+        for index, value in m.entPhysicalName.iteritems():
+            logger.trace('entPhysicalName entry %s, %s' % (index, value))
+            entries_entPhysicalName[index] = value
+            counter += 1
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds +
+                                          tdiff.days * 24 * 3600) * 10 ** 6) / 1000
+        logger.info('fn=InterfaceAPI/collect_entities : %s : loop over entPhysicalName done in %s, %s entries found' % (devicename, duration, counter))
+
+        # entPhysicalContainedIn
+        entries_entPhysicalContainedIn = {}
+        tstart = datetime.now()
+        counter = 0
+        logger.info('fn=InterfaceAPI/collect_entities : %s : loop over entPhysicalContainedIn' % devicename)
+        for index, value in m.entPhysicalContainedIn.iteritems():
+            logger.trace('entPhysicalContainedIn entry %s, %s' % (index, value))
+            entries_entPhysicalContainedIn[index] = value
+            counter += 1
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds +
+                                          tdiff.days * 24 * 3600) * 10 ** 6) / 1000
+        logger.info('fn=InterfaceAPI/collect_entities : %s : loop over entPhysicalContainedIn done in %s, %s entries found' % (devicename, duration, counter))
+
+        return ({'entries_entPhysicalClass': entries_entPhysicalClass,
+                 'entries_entPhysicalName': entries_entPhysicalName,
+                 'entries_entPhysicalContainedIn': entries_entPhysicalContainedIn})
+
+    # -----------------------------------------------------------------------------------
+    def merge_entities(self, entities, devicename):
+
+        # we merge entities based on the content of the class table
+        # strategies if the 3 collected tables have different index values:
+        # - if something is not in class table --> it will be ignored by this loop
+        # - if something is in class table but has no name or cin --> None
+
+        logger.info('fn=InterfaceAPI/merge_entities : %s : start merge entities' % devicename)
+
+        merged_entities = autovivification.AutoVivification()
+        for idx, value in entities['entries_entPhysicalClass'].iteritems():
+            logger.trace('merging index %s of class %s' % (idx, value))
+            merged_entities[idx]['class'] = value
+            merged_entities[idx]['name'] = entities['entries_entPhysicalName'].get(idx, None)
+            merged_entities[idx]['cin'] = entities['entries_entPhysicalContainedIn'].get(idx, None)
+
+        logger.trace('%s : done merging entities' % devicename)
+
+        return merged_entities
+
+    # -----------------------------------------------------------------------------------
+    def get_ports(self, merged_entities, devicename):
+
+        # construct a table (dict) 'ifname' --> 'enclosing-chassis'
+        # we go over the entity table, find out each interface (class=port)
+        # and then find the enclosing-chassis of this interface
+
+        logger.info('fn=InterfaceAPI/get_ports : %s : get_ports' % devicename)
+
+        port_table = {}
+        for idx, entry in merged_entities.iteritems():
+            # only ports
+            if entry['class'] == 10:  # entPhysicalClass=10 are ports (interfaces of some sort)
+                logger.trace('%s : port %s' % (devicename, entry['name']))
+                # entPhysicalClass=3 are chassis
                 chassis_idx = self.find_parent_of_type(idx, 3, merged_entities)
                 port_table[entry['name']] = chassis_idx
 
-        logger.info('%s : done get_ports' % devicename)
+        logger.trace('%s : done get_ports' % devicename)
 
         return port_table
 
@@ -889,18 +1374,18 @@ class InterfaceAPI(restful.Resource):
         # this is a recursive function walking up the entity tree to find
         # the first ancestor of desired type
 
-        logger.debug('find_parent_of_type %s for entity %s' % (searched_parent_type, port_idx))
+        logger.trace('find_parent_of_type %s for entity %s' % (searched_parent_type, port_idx))
 
         parent_idx = merged_entities[port_idx]['cin']
-        logger.debug('parent of port %s is %s' % (port_idx, parent_idx))
+        logger.trace('parent of port %s is %s' % (port_idx, parent_idx))
 
         type_of_parent = merged_entities[parent_idx]['class']
-        logger.debug('type of parent %s is %s' % (parent_idx, type_of_parent))
+        logger.trace('type of parent %s is %s' % (parent_idx, type_of_parent))
 
         # is the parent already the desired type ?
         if type_of_parent == searched_parent_type:
             # yes !
-            logger.debug('parent %s has the searched type %s' % (parent_idx, searched_parent_type))
+            logger.trace('parent %s has the searched type %s' % (parent_idx, searched_parent_type))
             return parent_idx
         else:
             # no, go deeper
@@ -910,7 +1395,7 @@ class InterfaceAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 # GET interfaces counters of one interface
 # -----------------------------------------------------------------------------------
-class InterfaceCounterAPI(restful.Resource):
+class InterfaceCounterAPI(Resource):
     __doc__ = '''{
         "name": "InterfaceCounterAPI",
         "description": "GET interface counters of one interface",
@@ -988,7 +1473,7 @@ class InterfaceCounterAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 # GET MAC(ethernet) to port mappings from a device
 # -----------------------------------------------------------------------------------
-class MacAPI(restful.Resource):
+class MacAPI(Resource):
     __doc__ = '''{
         "name": "MacAPI",
         "description": "MAC(ethernet) to port mappings from a device",
@@ -1022,7 +1507,6 @@ class MacAPI(restful.Resource):
               cache=app.config['SNMP_CACHE'],
               none=True)
 
-
         try:
             deviceinfo['sysName'] = m.sysName
 
@@ -1052,34 +1536,46 @@ class MacAPI(restful.Resource):
         deviceinfo['macs'] = macs_organized
         return deviceinfo
 
+
     # we create a dict indexed by ifIndex,
     # it's then easier when having to enrich an interface info when knowing
     # the ifIndex
     def get_macs_from_device(self, devicename, m, ro_community):
-        #-------------------------
-        logger.debug('fn=MacAPI/get_macs_from_device : %s' % devicename)
+        # see http://www.cisco.com/c/en/us/support/docs/ip/simple-network-management-protocol-snmp/44800-mactoport44800.html
+
+        logger.debug('fn=MacAPI/get_macs_from_device : %s : get vlan list' % devicename)
+        vlans = autovivification.AutoVivification()
+        # names
+        for index, value in m.vtpVlanName.iteritems():
+            managementDomainIndex, vtpVlanIndex = index
+            vlans[vtpVlanIndex]['name'] = value
+        # types
+        for index, value in m.vtpVlanType.iteritems():
+            managementDomainIndex, vtpVlanIndex = index
+            vlans[vtpVlanIndex]['type'] = str(value)
+        # states
+        for index, value in m.vtpVlanState.iteritems():
+            managementDomainIndex, vtpVlanIndex = index
+            vlans[vtpVlanIndex]['state'] = str(value)
+        logger.debug('fn=MacAPI/get_macs_from_device : %s : got %s vlans' % (devicename, len(vlans)))
+
+        # now loop across every VLAN
         macs = {}
         total_mac_entries = 0
+        for vlan_nr in vlans:
 
-        for entry in m.vtpVlanName:
-            vlan_nr = entry[1]
-            try:
-                logger.debug(
-                    'fn=MacAPI/get_macs_from_device : vlan_nr = %s' % (vlan_nr))
-                vlan_type = m.vtpVlanType[entry]
-                vlan_state = m.vtpVlanState[entry]
-                vlan_name = m.vtpVlanName[entry]
-            except:
-                logger.warn(
-                    "fn=MacAPI/get_macs_from_device %s : failed to get vlan detail infos. Skip to next vlan" % devicename)
-                continue
+            mac_entries = 0
+            vlan_type = vlans[vlan_nr]['type']
+            vlan_state = vlans[vlan_nr]['state']
+            vlan_name = vlans[vlan_nr]['name']
+            logger.debug('fn=MacAPI/get_macs_from_device : checking vlan_nr = %s, name = %s, type = %s, state = %s' % (vlan_nr, vlan_name, vlan_type, vlan_state))
 
             # only ethernet VLANs
-            if vlan_type == 'ethernet' and vlan_state == 'operational':
-                logger.debug('fn=MacAPI/get_macs_from_device : %s : polling vlan %s (%s)' %
-                             (devicename, vlan_nr, vlan_name))
+            if vlan_type == 'ethernet(1)' and vlan_state == 'operational(1)':
+                logger.debug('fn=MacAPI/get_macs_from_device : %s : polling vlan %s (%s)' % (devicename, vlan_nr, vlan_name))
 
                 # VLAN-based community, have a local manager for each VLAN
+                # this works probably only for Cisco
                 vlan_community = "%s@%s" % (ro_community, vlan_nr)
                 # can be slow for big switches, so try only once but longer
                 lm = M(host=devicename,
@@ -1090,58 +1586,75 @@ class MacAPI(restful.Resource):
                        cache=app.config['SNMP_CACHE'],
                        none=True)
 
-                # we pull them in an array so we can catch timeouts for broken IOS versions
-                # happened on a big stack of 8 Cisco 3750 running 12.2(46)SE
-                # (fc2)
+                # we pull them in an large block so we can catch timeouts for broken IOS versions
+                # happened on a big stack of 8 Cisco 3750 running 12.2(46)SE (fc2)
                 try:
-                    logger.debug(
-                        'fn=MacAPI/get_macs_from_device : trying to pull all mac_entries for vlan %s (%s)' % (vlan_nr, vlan_name))
-                    for mac_entry in lm.dot1dTpFdbAddress:
-                        port = lm.dot1dTpFdbPort[mac_entry]
-                        if port == None:
-                            logger.debug(
-                                "fn=MacAPI/get_macs_from_device : %s : skip port=None" % (devicename))
-                            continue
+                    logger.debug('fn=MacAPI/get_macs_from_device : trying to pull all mac_entries for vlan %s (%s)' % (vlan_nr, vlan_name))
 
-                        try:
-                            ifindex = lm.dot1dBasePortIfIndex[port]
-                        except Exception, e:
-                            logger.debug(
-                                "fn=MacAPI/get_macs_from_device : %s : port=%s, mac_entry_idx lookup failed : %s" % (devicename, port, e))
+                    dot1dTpFdbAddress = {}
+                    dot1dTpFdbPort = {}
+                    dot1dBasePortIfIndex = {}
 
-                        try:
-                            mac = netaddr.EUI(mac_entry)
-                            vendor = mac.oui.registration().org
-                        except Exception, e:
-                            #logger.info("fn=MacAPI/get_macs_from_device : %s : vendor lookup failed : %s" % (devicename, e))
-                            vendor = 'unknown'
+                    for index, mac_entry in lm.dot1dTpFdbAddress.iteritems():
+                        dot1dTpFdbAddress[index] = mac_entry
+                        mac_entries += 1
+                    logger.debug('fn=MacAPI/get_macs_from_device : got %s dot1dTpFdbAddress entries for vlan %s (%s)' % (len(dot1dTpFdbAddress), vlan_nr, vlan_name))
+                    if mac_entries > 0:
+                        # vlan is interesting, it has at least 1 MAC
+                        for index, port in lm.dot1dTpFdbPort.iteritems():
+                            dot1dTpFdbPort[index] = port
+                        logger.debug('fn=MacAPI/get_macs_from_device : got %s dot1dTpFdbPort entries for vlan %s (%s)' % (len(dot1dTpFdbPort), vlan_nr, vlan_name))
 
-                        #logger.debug("STORAGE: idx=%s, vlan=%s, mac=%s, vendor=%s" % (ifindex, vlan_nr, str(mac), vendor))
-                        mac_record = {'mac': str(
-                            mac), 'vendor': vendor, 'vlan': vlan_nr}
-                        if ifindex in macs:
-                            macs[ifindex].append(mac_record)
-                        else:
-                            macs[ifindex] = [mac_record]
+                        for index, ifindex in lm.dot1dBasePortIfIndex.iteritems():
+                            dot1dBasePortIfIndex[index] = ifindex
+                        logger.debug('fn=MacAPI/get_macs_from_device : got %s dot1dBasePortIfIndex entries for vlan %s (%s)' % (len(dot1dBasePortIfIndex), vlan_nr, vlan_name))
 
-                    mac_entries = len(macs[ifindex])
-                    total_mac_entries += mac_entries
-                    logger.debug("fn=MacAPI/get_macs_from_device : %s mac entries "
-                                 "found" % mac_entries)
+                        logger.debug('fn=MacAPI/get_macs_from_device : enrich MAC table for vlan %s (%s)' % (vlan_nr, vlan_name))
+                        for mac_entry in dot1dTpFdbAddress:
+                            port = dot1dTpFdbPort[mac_entry]
+                            if port == None:
+                                logger.debug("fn=MacAPI/get_macs_from_device : %s vlan %s : skip port=None" % (devicename, vlan_nr))
+                                continue
+
+                            try:
+                                ifindex = dot1dBasePortIfIndex[port]
+                            except Exception, e:
+                                logger.debug("fn=MacAPI/get_macs_from_device : %s : port=%s, mac_entry_idx lookup failed : %s" % (devicename, port, e))
+
+                            try:
+                                mac = netaddr.EUI(mac_entry)
+                                vendor = mac.oui.registration().org
+                            except Exception, e:
+                                logger.trace("fn=MacAPI/get_macs_from_device : %s : vendor lookup failed : %s" % (devicename, e))
+                                vendor = 'unknown'
+
+                            logger.trace("idx=%s, vlan=%s, mac=%s, vendor=%s" % (ifindex, vlan_nr, str(mac), vendor))
+                            mac_record = {'mac': str(mac), 'vendor': vendor, 'vlan': vlan_nr}
+                            if ifindex in macs:
+                                macs[ifindex].append(mac_record)
+                            else:
+                                macs[ifindex] = [mac_record]
+
+                    else:
+                        logger.debug('fn=MacAPI/get_macs_from_device : vlan %s (%s) skipped, no MAC found on it' % (vlan_nr, vlan_name))
 
                 except:
-                    logger.info(
-                        "fn=MacAPI/get_macs_from_device : failed, probably an unused VLAN (%s) on a buggy IOS producing SNMP timeout. Ignoring this VLAN" % (vlan_nr))
+                    logger.info("fn=MacAPI/get_macs_from_device : failed, probably an unused VLAN (%s) on a buggy IOS producing SNMP timeout. Ignoring this VLAN" % (vlan_nr))
 
-        logger.debug("fn=MacAPI/get_macs_from_device : returning data, total %s mac "
-                     "entries found" % total_mac_entries)
+            else:
+                logger.debug('fn=MacAPI/get_macs_from_device : %s : skipping vlan %s (%s)' % (devicename, vlan_nr, vlan_name))
+
+            logger.debug("fn=MacAPI/get_macs_from_device : %s mac entries found in vlan %s (%s)" % (mac_entries, vlan_nr, vlan_name))
+            total_mac_entries += mac_entries
+
+        logger.debug("fn=MacAPI/get_macs_from_device : returning data, total %s mac entries found" % total_mac_entries)
         return macs, total_mac_entries
 
 
 # -----------------------------------------------------------------------------------
 # GET CDP info from a device
 # -----------------------------------------------------------------------------------
-class CDPAPI(restful.Resource):
+class CDPAPI(Resource):
     __doc__ = '''{
         "name": "CDPAPI",
         "description": "GET CDP info from a device",
@@ -1153,7 +1666,6 @@ class CDPAPI(restful.Resource):
     decorators = [auth.login_required]
 
     def get(self, devicename):
-        #-------------------------
         logger.debug('fn=CDPAPI/get : src=%s, %s' % (request.remote_addr, devicename))
 
         tstart = datetime.now()
@@ -1165,8 +1677,7 @@ class CDPAPI(restful.Resource):
         deviceinfo = autovivification.AutoVivification()
         deviceinfo['name'] = devicename
 
-        logger.debug(
-            'fn=CDPAPI/get : %s : creating the snimpy manager' % devicename)
+        logger.debug('fn=CDPAPI/get : %s : creating the snimpy manager' % devicename)
         m = M(host=devicename,
               community=ro_community,
               version=2,
@@ -1183,18 +1694,24 @@ class CDPAPI(restful.Resource):
             cdps_organized = []
             for ifindex in cdps:
                 entry = {}
+
                 entry["index"] = ifindex
+
+                address_type = cdps[ifindex]['cdpCacheAddressType']
+                if address_type in ('ipv4', 'ipv6'):
+                    entry["cdpCacheAddress"] = util.convert_ip_from_snmp_format(address_type, cdps[ifindex]['cdpCacheAddress'])
+                else:
+                    entry["cdpCacheAddress"] = 'cannot convert SNMP value for address, unsupported type %s' % address_type
+
+                entry["cdpCacheVersion"] = cdps[ifindex]['cdpCacheVersion']
                 entry["cdpCacheDeviceId"] = cdps[ifindex]['cdpCacheDeviceId']
-                entry["cdpCacheDevicePort"] = cdps[
-                    ifindex]['cdpCacheDevicePort']
+                entry["cdpCacheDevicePort"] = cdps[ifindex]['cdpCacheDevicePort']
                 entry["cdpCachePlatform"] = cdps[ifindex]['cdpCachePlatform']
-                entry["cdpCacheLastChange"] = cdps[
-                    ifindex]['cdpCacheLastChange']
+                entry["cdpCacheLastChange"] = cdps[ifindex]['cdpCacheLastChange']
                 cdps_organized.append(entry)
 
         except snmp.SNMPException, e:
-            logger.error("fn=CDPAPI/get : %s : SNMP get failed : %s" %
-                         (devicename, e))
+            logger.error("fn=CDPAPI/get : %s : SNMP get failed : %s" % (devicename, e))
             return errst.status('ERROR_OP', 'SNMP get failed on %s, cause : %s' % (devicename, e)), 200
 
         tend = datetime.now()
@@ -1209,36 +1726,58 @@ class CDPAPI(restful.Resource):
         return deviceinfo
 
     # we create a dict indexed by ifIndex,
-    # it's then easier when having to enrich an interface info when knowing
-    # the ifIndex
+    # it's then easier when having to enrich an interface info when knowing the ifIndex
     def get_cdp_from_device(self, devicename, m, ro_community):
-        #-------------------------
         logger.debug('fn=CDPAPI/get_cdp_from_device : %s' % devicename)
 
         cdps = autovivification.AutoVivification()
         try:
-            for cdp_idx in m.cdpCacheDeviceId:
-                ifindex = cdp_idx[0]
-                device = m.cdpCacheDeviceId[cdp_idx]
-                interface = m.cdpCacheDevicePort[cdp_idx]
-                platform = m.cdpCachePlatform[cdp_idx]
-                lastchange = m.cdpCacheLastChange[cdp_idx]
-                cdps[ifindex]['cdpCacheDeviceId'] = device
-                cdps[ifindex]['cdpCacheDevicePort'] = interface
-                cdps[ifindex]['cdpCachePlatform'] = platform
-                cdps[ifindex]['cdpCacheLastChange'] = lastchange
-        except:
-            logger.warn(
-                "fn=CDPAPI/get_cdp_from_device : failed SNMP get for CDP")
+            logger.debug('fn=CDPAPI/get_cdp_from_device : %s : get cdpCacheAddressType' % devicename)
+            for index, value in m.cdpCacheAddressType.iteritems():
+                # map to standard values so we can then translate it with our util function
+                # hope it will work with IPv6, no way to test at development time
+                if str(value) == 'ip(1)':
+                    cdps[index[0]]['cdpCacheAddressType'] = 'ipv4'
+                elif str(value) == 'ipv6(20)':
+                    cdps[index[0]]['cdpCacheAddressType'] = 'ipv6'
+                else:
+                    cdps[index[0]]['cdpCacheAddressType'] = 'unsupported' % value
+                    logger.warn('fn=CDPAPI/get_cdp_from_device : %s : unsupported cdpCacheAddressType <%s>' % (devicename, value))
 
-        logger.debug("fn=CDPAPI/get_cdp_from_device : returning data")
+            logger.debug('fn=CDPAPI/get_cdp_from_device : %s : get cdpCacheAddress' % devicename)
+            for index, value in m.cdpCacheAddress.iteritems():
+                cdps[index[0]]['cdpCacheAddress'] = value
+
+            logger.debug('fn=CDPAPI/get_cdp_from_device : %s : get cdpCacheVersion' % devicename)
+            for index, value in m.cdpCacheVersion.iteritems():
+                cdps[index[0]]['cdpCacheVersion'] = value
+
+            logger.debug('fn=CDPAPI/get_cdp_from_device : %s : get cdpCacheDeviceId' % devicename)
+            for index, value in m.cdpCacheDeviceId.iteritems():
+                cdps[index[0]]['cdpCacheDeviceId'] = value
+
+            logger.debug('fn=CDPAPI/get_cdp_from_device : %s : get cdpCacheDevicePort' % devicename)
+            for index, value in m.cdpCacheDevicePort.iteritems():
+                cdps[index[0]]['cdpCacheDevicePort'] = value
+
+            logger.debug('fn=CDPAPI/get_cdp_from_device : %s : get cdpCachePlatform' % devicename)
+            for index, value in m.cdpCachePlatform.iteritems():
+                cdps[index[0]]['cdpCachePlatform'] = value
+
+            logger.debug('fn=CDPAPI/get_cdp_from_device : %s : get cdpCacheLastChange' % devicename)
+            for index, value in m.cdpCacheLastChange.iteritems():
+                cdps[index[0]]['cdpCacheLastChange'] = value
+
+        except snmp.SNMPException, e:
+            logger.warn("fn=CDPAPI/get_cdp_from_device : failed SNMP get for CDP : %s" % e)
+
         return cdps
 
 
 # -----------------------------------------------------------------------------------
 # GET interface trunk info from a device
 # -----------------------------------------------------------------------------------
-class TrunkAPI(restful.Resource):
+class TrunkAPI(Resource):
     __doc__ = '''{
         "name": "TrunkAPI",
         "description": "GET interface Trunk info from a device",
@@ -1302,24 +1841,24 @@ class TrunkAPI(restful.Resource):
         try:
 
             for index, value in m.vlanTrunkPortDynamicState.iteritems():
-                logger.debug("fn=TrunkAPI/get_trunks_from_device/1 : trunk : %s, %s" % (index, value))
+                logger.trace("fn=TrunkAPI/get_trunks_from_device/1 : trunk : %s, %s" % (index, value))
                 trunks[index]['trunkAdminState'] = str(value)
 
             for index, value in m.vlanTrunkPortDynamicStatus.iteritems():
-                logger.debug("fn=TrunkAPI/get_trunks_from_device/2 : trunk : %s, %s" % (index, value))
+                logger.trace("fn=TrunkAPI/get_trunks_from_device/2 : trunk : %s, %s" % (index, value))
                 trunks[index]['trunkOperState'] = str(value)
 
         except snmp.SNMPException, e:
             logger.warn("fn=TrunkAPI/get_trunks_from_device : failed SNMP get for Trunks : %s" % e)
 
-        logger.debug("fn=TrunkAPI/get_trunks_from_device : returning data")
+        logger.debug("fn=TrunkAPI/get_trunks_from_device : returning data : %s trunks entries found" % len(trunks))
         return trunks
 
 
 # -----------------------------------------------------------------------------------
 # GET ARP info from a device
 # -----------------------------------------------------------------------------------
-class ARPAPI(restful.Resource):
+class ARPAPI(Resource):
     __doc__ = '''{
         "name": "ARPAPI",
         "description": "GET ARP info from a device (MAC to IP)",
@@ -1439,7 +1978,7 @@ class ARPAPI(restful.Resource):
 # -----------------------------------------------------------------------------------
 # GET DHCP snooping info from a device
 # -----------------------------------------------------------------------------------
-class DHCPsnoopAPI(restful.Resource):
+class DHCPsnoopAPI(Resource):
     __doc__ = '''{
         "name": "DHCPsnoopAPI",
         "description": "GET DHCP snooping info from a device",
@@ -1451,7 +1990,6 @@ class DHCPsnoopAPI(restful.Resource):
     decorators = [auth.login_required]
 
     def get(self, devicename):
-        #-------------------------
         logger.debug('fn=DHCPsnoopAPI/get : src=%s, %s' % (request.remote_addr, devicename))
 
         tstart = datetime.now()
@@ -1475,8 +2013,7 @@ class DHCPsnoopAPI(restful.Resource):
 
         try:
             deviceinfo['sysName'] = m.sysName
-            deviceinfo['dhcpsnoop'] = self.get_dhcp_snooping_from_device(
-                devicename, m, ro_community)
+            deviceinfo['dhcpsnoop'] = self.get_dhcp_snooping_from_device(devicename, m)
 
         except snmp.SNMPException, e:
             logger.error(
@@ -1494,10 +2031,8 @@ class DHCPsnoopAPI(restful.Resource):
         return deviceinfo
 
     # list of DHCP snopped entries. some interfaces (idx) can occur multiple times,
-    # called from DHCPsnoopAPI/get above, and optionally by InterfaceAPI/get
-    # if asked so
-    def get_dhcp_snooping_from_device(self, devicename, m, ro_community):
-        #-------------------------
+    # called from DHCPsnoopAPI/get above, and optionally by InterfaceAPI/get if asked so
+    def get_dhcp_snooping_from_device(self, devicename, m):
 
         inet_address_types = {
             0: 'unknown',
@@ -1517,34 +2052,61 @@ class DHCPsnoopAPI(restful.Resource):
             6: 'destroy'
         }
 
-        logger.debug(
-            'fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s' % devicename)
-        dhcp_snooping_entries = []
+        logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s' % devicename)
         try:
-            for entry in m.cdsBindingsAddrType:
-                vlan = int(entry[0])
-                mac = str(entry[1])
-                # reformat mac: comes as "0:22:90:1b:6:e6" and should be
-                # "00-22-90-1B-06-E6"
+
+            logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s : get cdsBindingsAddrType' % devicename)
+            cdsBindingsAddrType = {}
+            for index, value in m.cdsBindingsAddrType.iteritems():
+                cdsBindingsAddrType[index] = value
+
+            logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s : get cdsBindingsIpAddress' % devicename)
+            cdsBindingsIpAddress = {}
+            for index, value in m.cdsBindingsIpAddress.iteritems():
+                cdsBindingsIpAddress[index] = value
+
+            logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s : get cdsBindingsInterface' % devicename)
+            cdsBindingsInterface = {}
+            for index, value in m.cdsBindingsInterface.iteritems():
+                cdsBindingsInterface[index] = value
+
+            logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s : get cdsBindingsLeasedTime' % devicename)
+            cdsBindingsLeasedTime = {}
+            for index, value in m.cdsBindingsLeasedTime.iteritems():
+                cdsBindingsLeasedTime[index] = value
+
+            logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s : get cdsBindingsStatus' % devicename)
+            cdsBindingsStatus = {}
+            for index, value in m.cdsBindingsStatus.iteritems():
+                cdsBindingsStatus[index] = value
+
+            logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s : get cdsBindingsHostname' % devicename)
+            cdsBindingsHostname = {}
+            for index, value in m.cdsBindingsHostname.iteritems():
+                cdsBindingsHostname[index] = value
+
+            # now loop over the entries and merge the diverse tables
+            dhcp_snooping_entries = []
+            for index in cdsBindingsAddrType:
+                vlan = int(index[0])
+                mac = str(index[1])
+                # reformat mac: comes as "0:22:90:1b:6:e6" and should be "00-22-90-1B-06-E6"
                 mac_e = netaddr.EUI(mac)
                 mac_f = str(mac_e)
                 # add vendor
                 try:
                     vendor = mac_e.oui.registration().org
                 except netaddr.NotRegisteredError as e:
-                    logger.warn('fn=DHCPsnoopAPI: %s : error %s : unknown vendor for %s' % (
-                        devicename, e, mac_f))
+                    logger.warn('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device: %s : error %s : unknown vendor for %s' % (devicename, e, mac_f))
                     vendor = 'unknown'
-                address_type = inet_address_types.get(
-                    m.cdsBindingsAddrType[entry], 'unsupported')
-                ip = util.convert_ip_from_snmp_format(address_type, m.cdsBindingsIpAddress[entry])
-                interface_idx = m.cdsBindingsInterface[entry]
-                leased_time = m.cdsBindingsLeasedTime[entry]
-                status = binding_status.get(
-                    m.cdsBindingsStatus[entry], 'unsupported')
-                hostname = m.cdsBindingsHostname[entry]
+                address_type = inet_address_types.get(cdsBindingsAddrType[index], 'unsupported')
+                ip = util.convert_ip_from_snmp_format(address_type, cdsBindingsIpAddress[index])
+                interface_idx = cdsBindingsInterface[index]
+                leased_time = cdsBindingsLeasedTime[index]
+                status = binding_status.get(cdsBindingsStatus[index], 'unsupported')
+                hostname = cdsBindingsHostname.get(index, None)
 
-                logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device %s : vlan=%s, mac=%s, vendor=%s, address_type=%s, ip=%s, interface_idx=%s, leased_time=%s, status=%s, hostname=%s' %
+                logger.trace('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device %s : vlan=%s, mac=%s, vendor=%s, address_type=%s, ip=%s, interface_idx=%s, leased_time=%s, status=%s, hostname=%s' %
                              (devicename, vlan, mac_f, vendor, address_type, ip, interface_idx, leased_time, status, hostname))
                 dhcp_entry = {'interface_idx': interface_idx,
                               'vlan': vlan,
@@ -1557,19 +2119,18 @@ class DHCPsnoopAPI(restful.Resource):
                               'hostname': hostname
                               }
                 dhcp_snooping_entries.append(dhcp_entry)
-        except snmp.SNMPException, e:
-            logger.warn(
-                "fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : failed SNMP get for DHCP snooping : %s" % e)
 
-        logger.debug(
-            "fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : returning data")
+        except snmp.SNMPException, e:
+            logger.warn("fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : failed SNMP get for DHCP snooping : %s" % e)
+
+        logger.debug("fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : returning data : %s entries found" % len(dhcp_snooping_entries))
         return dhcp_snooping_entries
 
 
 # -----------------------------------------------------------------------------------
 # GET vlan list from a device
 # -----------------------------------------------------------------------------------
-class vlanlistAPI(restful.Resource):
+class vlanlistAPI(Resource):
     __doc__ = '''{
         "name": "vlanlistAPI",
         "description": "GET vlan list from a device",
@@ -1608,7 +2169,7 @@ class vlanlistAPI(restful.Resource):
 
             deviceinfo['sysName'] = m.sysName
 
-            logger.debug('fn=vlanlistAPI/get : %s : get vlan list' %
+            logger.debug('fn=vlanlistAPI/get : %s : get data vlan list' %
                          devicename)
             vlans_lookup_table = self.get_vlans(devicename, m, ro_community)
 
@@ -1640,33 +2201,38 @@ class vlanlistAPI(restful.Resource):
     def get_vlans(self, devicename, m, ro_community):
         ''' return a VLAN dict indexed by vlan-nr '''
 
-        logger.debug(
-            'fn=vlanlistAPI/get_vlans : %s : get vlan list' % devicename)
-        vlans = {}
-        for entry in m.vtpVlanName:
-            vlan = {}
-            logger.debug('fn=vlanlistAPI/get_vlans : %s : get vlan info for entry %s/%s' %
-                         (devicename, entry[0], entry[1]))
-            vlan['type'] = str(m.vtpVlanType[entry])
-            vlan['state'] = str(m.vtpVlanState[entry])
-            vlan['name'] = m.vtpVlanName[entry]
-            vlans[entry[1]] = vlan
+        logger.debug('fn=vlanlistAPI/get_vlans : %s : get data vlan list' % devicename)
+
+        vlans = autovivification.AutoVivification()
+        # names
+        for index, value in m.vtpVlanName.iteritems():
+            managementDomainIndex, vtpVlanIndex = index
+            vlans[vtpVlanIndex]['name'] = value
+        # types
+        for index, value in m.vtpVlanType.iteritems():
+            managementDomainIndex, vtpVlanIndex = index
+            vlans[vtpVlanIndex]['type'] = str(value)
+        # states
+        for index, value in m.vtpVlanState.iteritems():
+            managementDomainIndex, vtpVlanIndex = index
+            vlans[vtpVlanIndex]['state'] = str(value)
 
         return vlans
+
 
     def get_voice_vlans(self, devicename, m, ro_community):
         ''' return a VOICE_VLAN dict indexed by vlan-nr '''
 
-        logger.debug(
-            'fn=vlanlistAPI/get_voice_vlans : %s : get voice vlan list' % devicename)
+        logger.debug('fn=vlanlistAPI/get_voice_vlans : %s : get voice vlan list' % devicename)
         voice_vlans = {}
         # some routers (Cisco 1921) return empty list, producing an error upstream.
         # Catch it and return an empty list
         try:
-            for index in m.vmVoiceVlanId:
-                logger.debug(
-                    'fn=vlanlistAPI/get_voice_vlans : %s : get voice vlan info for index %s' % (devicename, index))
-                voice_vlans[index] = str(m.vmVoiceVlanId[index])
+
+            for index, value in m.vmVoiceVlanId.iteritems():
+                logger.trace('fn=vlanlistAPI/get_voice_vlans : %s : got voice vlan %s for index %s' % (devicename, value, index))
+                voice_vlans[index] = str(value)
+
         except Exception, e:
             logger.info("fn=vlanlistAPI/get_voice_vlans : %s : SNMP get failed : %s" % (devicename, e))
 
@@ -1677,7 +2243,7 @@ class vlanlistAPI(restful.Resource):
 # PUT on a vlan : assign the port to a VLAN
 # /aj/api/v1/interfaces/vlan/$fqdn/$ifindex
 # -----------------------------------------------------------------------------------
-class PortToVlanAPI(restful.Resource):
+class PortToVlanAPI(Resource):
     __doc__ = '''{
         "name": "PortToVlanAPI",
         "description": "PUT on a vlan : assign the port to a VLAN",
@@ -1748,7 +2314,7 @@ class PortToVlanAPI(restful.Resource):
 # PUT on an interface : configure the interface
 # /aj/api/v1/interface/config/$fqdn/$ifindex
 # -----------------------------------------------------------------------------------
-class InterfaceConfigAPI(restful.Resource):
+class InterfaceConfigAPI(Resource):
     __doc__ = '''{
         "name": "InterfaceConfigAPI",
         "description": "PUT on an interface : configure the interface",
@@ -1829,7 +2395,7 @@ class InterfaceConfigAPI(restful.Resource):
 # this goes a bit beside the idea of this web-service, but it brings flexibility
 # FIXME: walk provide too much info if eg done on a single get instance like 1.3.6.1.2.1.1.3.0
 # -----------------------------------------------------------------------------------
-class OIDpumpAPI(restful.Resource):
+class OIDpumpAPI(Resource):
     __doc__ = '''{
         "name": "OIDpumpAPI",
         "description": "SNMP get or walk on a OID. This is not completely tested, and walk tend to give back too much data. get can be used but usually needs a .0 at the end of the OID, so the URI to get sysUptime would be `/aj/api/v1/oidpump/devicename/get/1.3.6.1.2.1.1.3.0`, while the URI to walk ifName would be `/aj/api/v1/oidpump/devicename/walk/1.3.6.1.2.1.31.1.1.1.1`",
@@ -1905,7 +2471,7 @@ class OIDpumpAPI(restful.Resource):
 # PUT on a device : run commands over ssh
 # /aj/api/v1/device/ssh/$fqdn
 # -----------------------------------------------------------------------------------
-class DeviceSshAPI(restful.Resource):
+class DeviceSshAPI(Resource):
     __doc__ = '''{
         "name": "DeviceSshAPI",
         "description": "PUT on a device : run commands over ssh. Do NOT terminate your command list with logout/exit/etc.",
@@ -2018,12 +2584,18 @@ else:
 # -----------------------------------------------------------------------------------
 # REST API
 # -----------------------------------------------------------------------------------
-api = restful.Api(app)
+api = Api(app)
 
 
 # -----------------------------------------------------------------------------------
 # logging
 # -----------------------------------------------------------------------------------
+
+# add TRACE log level
+logging.TRACE = 5
+logging.addLevelName(logging.TRACE, "TRACE")
+logging.Logger.trace = lambda inst, msg, *args, **kwargs: inst.log(logging.TRACE, msg, *args, **kwargs)
+logging.trace = lambda msg, *args, **kwargs: logging.log(logging.TRACE, msg, *args, **kwargs)
 
 log_file = app.config['LOGFILE']
 global logger
@@ -2032,17 +2604,19 @@ hdlr = logging.handlers.RotatingFileHandler(log_file,
                                             maxBytes=app.config['LOG_MAX_SIZE'],
                                             backupCount=app.config['LOG_BACKUP_COUNT'])
 # we have the PID in each log entry to differentiate parallel processes writing to the log
-FORMAT = "%(asctime)s - %(process)d - %(name)-16s - %(levelname)-7s - %(" \
-         "message)s"
+FORMAT = "%(asctime)s - %(process)d - %(name)-16s - %(levelname)-7s - %(message)s"
 formatter = logging.Formatter(FORMAT)
 hdlr.setFormatter(formatter)
 logger.addHandler(hdlr)
 # avoid propagation to console
 logger.propagate = False
+
+# level from config.
+logger.setLevel(logging.INFO)
 if app.config['DEBUG']:
-    logger.setLevel(logging.DEBUG)
-else:
-    logger.setLevel(logging.INFO)
+     logger.setLevel(logging.DEBUG)
+if app.config['TRACE']:
+    logger.setLevel(logging.TRACE)
 
 logger.info('version : <%s>' % __version__)
 logger.info('environment : <%s>' % app.config['ENVI'])
@@ -2051,7 +2625,6 @@ logger.info('mandate_uuid : <%s>' % mandate_uuid)
 logger.info('SNMP cache = %ss' % app.config['SNMP_CACHE'])
 logger.info('SNMP timeout = %ss' % app.config['SNMP_TIMEOUT'])
 logger.info('SNMP retries = %ss' % app.config['SNMP_RETRIES'])
-
 
 # -----------------------------------------------------------------------------------
 # add all URLs and their corresponding classes
@@ -2081,6 +2654,12 @@ api.add_resource(InterfaceAPI,
 doc.add(loads(InterfaceAPI.__doc__),
         '/aj/api/v1/interfaces/<string:devicename>',
         InterfaceAPI.__dict__['methods'])
+
+api.add_resource(OldInterfaceAPI,
+                 '/aj/api/v1old/interfaces/<string:devicename>')
+doc.add(loads(OldInterfaceAPI.__doc__),
+        '/aj/api/v2/interfaces/<string:devicename>',
+        OldInterfaceAPI.__dict__['methods'])
 
 api.add_resource(InterfaceCounterAPI,
                  '/aj/api/v1/interface/counter/<string:devicename>/<string:ifindex>')
