@@ -937,6 +937,8 @@ class QuickInterfaceAPI(Resource):
                                    help='showcdp=0|1. Provide the CDP information for each port.')
         self.reqparse.add_argument('showdhcp', default=0, type=int, required=False,
                                    help='showdhcp=0|1. Provide the DHCP snooped information for each port.')
+        self.reqparse.add_argument('showtrunks', default=0, type=int, required=False,
+                                   help='showtrunks=0|1. Provide the trunk information for each port.')
         super(QuickInterfaceAPI, self).__init__()
 
     def get(self, devicename):
@@ -953,9 +955,9 @@ class QuickInterfaceAPI(Resource):
         showpoe = True if args['showpoe'] else False
         showcdp = True if args['showcdp'] else False
         showdhcp = True if args['showdhcp'] else False
-        logger.info(
-            'fn=QuickInterfaceAPI/get : %s : showmac=%s, showvlannames=%s, showpoe=%s, showcdp=%s, showdhcp=%s' %
-            (devicename, showmac, showvlannames, showpoe, showcdp, showdhcp))
+        showtrunks = True if args['showtrunks'] else False
+        logger.info('fn=InterfaceAPI/get : %s : showmac=%s, showvlannames=%s, showpoe=%s, showcdp=%s, showdhcp=%s, showtrunks=%s' %
+                    (devicename, showmac, showvlannames, showpoe, showcdp, showdhcp, showtrunks))
 
         ro_community = credmgr.get_credentials(devicename)['ro_community']
         if not check.check_snmp(M, devicename, ro_community, 'RO'):
@@ -976,6 +978,13 @@ class QuickInterfaceAPI(Resource):
               none=True)
 
         deviceinfo['sysName'] = m.sysName
+
+        # collect the mapping between interfaces and entities
+        # constructs a table (dict) 'ifname' --> 'enclosing-chassis'
+        # e.g. {<String: GigabitEthernet1/0/5>: <Integer: 1001>, etc}
+        entities = self.collect_entities(m, devicename)
+        merged_entities = self.merge_entities(entities, devicename)
+        entities_if_to_chassis = self.get_ports(merged_entities, devicename)
 
         # get the mac list
         if showmac:
@@ -999,6 +1008,10 @@ class QuickInterfaceAPI(Resource):
             dhcpAPI = DHCPsnoopAPI()
             dhcp_snooping_entries = dhcpAPI.get_dhcp_snooping_from_device(devicename, m)
 
+        if showtrunks:
+            trunkAPI = TrunkAPI()
+            trunks_entries = trunkAPI.get_trunks_from_device(devicename, m, ro_community)
+
         # here, we collect all properties ("columns" in Snimpy speak) from the ifTable
         # we do this with single iteritems() loops, as they use Bulk-Get, which is much faster
         # the results of each loop enriches a "giant dict".
@@ -1011,6 +1024,8 @@ class QuickInterfaceAPI(Resource):
         for index, desc in m.ifDescr.iteritems():
             # logger.debug('fn=QuickInterfaceAPI/get : %s : index = %s, desc = %s' % (devicename, index, desc))
             interfaces[index]['ifDescr'] = desc
+            # FIXME :
+            interfaces[index]['physicalIndex'] = entities_if_to_chassis.get(desc, None)
 
         logger.debug('fn=QuickInterfaceAPI/get : %s : get ifAdminStatus' % devicename)
         for index, adminstatus in m.ifAdminStatus.iteritems():
@@ -1150,6 +1165,16 @@ class QuickInterfaceAPI(Resource):
                             del entry['interface_idx']
                             interfaces[index]['dhcpsnoop'].append(entry)
 
+            # Trunks
+            if showtrunks:
+                if index in trunks_entries:
+                    interfaces[index]['trunkAdminState'] = trunks_entries[index]['trunkAdminState']
+                    interfaces[index]['trunkOperState'] = trunks_entries[index]['trunkOperState']
+                else:
+                    interfaces[index]['trunkAdminState'] = ''
+                    interfaces[index]['trunkOperState'] = ''
+
+
         # now flatify the dict to an array, because that's what our consumer wants
         interfaces_array = []
         for index in interfaces:
@@ -1248,6 +1273,124 @@ class QuickInterfaceAPI(Resource):
         logger.info('fn=QuickInterfaceAPI/get_poe : %s : POE collection duration=%s' % (devicename, duration))
 
         return poe
+
+    # -----------------------------------------------------------------------------------
+    def collect_entities(self, m, devicename):
+
+        # entPhysicalClass
+        entries_entPhysicalClass = {}
+        tstart = datetime.now()
+        counter = 0
+        logger.info('fn=QuickInterfaceAPI/collect_entities : %s : loop over entPhysicalClass' % devicename)
+        for index, value in m.entPhysicalClass.iteritems():
+            # logger.debug('TRACE : entPhysicalClass entry %s, %s' % (index, value))
+            entries_entPhysicalClass[index] = value
+            counter += 1
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds +
+                                          tdiff.days * 24 * 3600) * 10 ** 6) / 1000
+        logger.info('fn=QuickInterfaceAPI/collect_entities : %s : loop over entPhysicalClass done in %s, %s entries found' % (devicename, duration, counter))
+
+        # entPhysicalName
+        entries_entPhysicalName = {}
+        tstart = datetime.now()
+        counter = 0
+        logger.info('fn=QuickInterfaceAPI/collect_entities : %s : loop over entPhysicalName' % devicename)
+        for index, value in m.entPhysicalName.iteritems():
+            # logger.debug('TRACE : entPhysicalName entry %s, %s' % (index, value))
+            entries_entPhysicalName[index] = value
+            counter += 1
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds +
+                                          tdiff.days * 24 * 3600) * 10 ** 6) / 1000
+        logger.info('fn=QuickInterfaceAPI/collect_entities : %s : loop over entPhysicalName done in %s, %s entries found' % (devicename, duration, counter))
+
+        # entPhysicalContainedIn
+        entries_entPhysicalContainedIn = {}
+        tstart = datetime.now()
+        counter = 0
+        logger.info('fn=QuickInterfaceAPI/collect_entities : %s : loop over entPhysicalContainedIn' % devicename)
+        for index, value in m.entPhysicalContainedIn.iteritems():
+            # logger.debug('TRACE : entPhysicalContainedIn entry %s, %s' % (index, value))
+            entries_entPhysicalContainedIn[index] = value
+            counter += 1
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds +
+                                          tdiff.days * 24 * 3600) * 10 ** 6) / 1000
+        logger.info('fn=QuickInterfaceAPI/collect_entities : %s : loop over entPhysicalContainedIn done in %s, %s entries found' % (devicename, duration, counter))
+
+        return ({'entries_entPhysicalClass': entries_entPhysicalClass,
+                 'entries_entPhysicalName': entries_entPhysicalName,
+                 'entries_entPhysicalContainedIn': entries_entPhysicalContainedIn})
+
+    # -----------------------------------------------------------------------------------
+    def merge_entities(self, entities, devicename):
+
+        # we merge entities based on the content of the class table
+        # strategies if the 3 collected tables have different index values:
+        # - if something is not in class table --> it will be ignored by this loop
+        # - if something is in class table but has no name or cin --> None
+
+        logger.info('fn=QuickInterfaceAPI/merge_entities : %s : start merge entities' % devicename)
+
+        merged_entities = autovivification.AutoVivification()
+        for idx, value in entities['entries_entPhysicalClass'].iteritems():
+            # logger.debug('TRACE : merging index %s of class %s' % (idx, value))
+            merged_entities[idx]['class'] = value
+            merged_entities[idx]['name'] = entities['entries_entPhysicalName'].get(idx, None)
+            merged_entities[idx]['cin'] = entities['entries_entPhysicalContainedIn'].get(idx, None)
+
+        # logger.info('TRACE : %s : done merging entities' % devicename)
+
+        return merged_entities
+
+    # -----------------------------------------------------------------------------------
+    def get_ports(self, merged_entities, devicename):
+
+        # construct a table (dict) 'ifname' --> 'enclosing-chassis'
+        # we go over the entity table, find out each interface (class=port)
+        # and then find the enclosing-chassis of this interface
+
+        logger.info('fn=QuickInterfaceAPI/get_ports : %s : get_ports' % devicename)
+
+        port_table = {}
+        for idx, entry in merged_entities.iteritems():
+            # only ports
+            if entry['class'] == 10:  # entPhysicalClass=10 are ports (interfaces of some sort)
+                # logger.debug('TRACE : %s : port %s' % (devicename, entry['name']))
+                # entPhysicalClass=3 are chassis, this function
+                chassis_idx = self.find_parent_of_type(idx, 3, merged_entities)
+                port_table[entry['name']] = chassis_idx
+
+        # logger.info('TRACE : %s : done get_ports' % devicename)
+
+        return port_table
+
+    # -----------------------------------------------------------------------------------
+    def find_parent_of_type(self, port_idx, searched_parent_type, merged_entities):
+
+        # this is a recursive function walking up the entity tree to find
+        # the first ancestor of desired type
+
+        # logger.debug('TRACE : find_parent_of_type %s for entity %s' % (searched_parent_type, port_idx))
+
+        parent_idx = merged_entities[port_idx]['cin']
+        # logger.debug('TRACE : parent of port %s is %s' % (port_idx, parent_idx))
+
+        type_of_parent = merged_entities[parent_idx]['class']
+        # logger.debug('TRACE : type of parent %s is %s' % (parent_idx, type_of_parent))
+
+        # is the parent already the desired type ?
+        if type_of_parent == searched_parent_type:
+            # yes !
+            # logger.debug('TRACE : parent %s has the searched type %s' % (parent_idx, searched_parent_type))
+            return parent_idx
+        else:
+            # no, go deeper
+            return self.find_parent_of_type(parent_idx, 3, merged_entities)
 
 
 # -----------------------------------------------------------------------------------
@@ -1699,17 +1842,17 @@ class TrunkAPI(Resource):
         try:
 
             for index, value in m.vlanTrunkPortDynamicState.iteritems():
-                logger.debug("fn=TrunkAPI/get_trunks_from_device/1 : trunk : %s, %s" % (index, value))
+                # logger.debug("TRACE fn=TrunkAPI/get_trunks_from_device/1 : trunk : %s, %s" % (index, value))
                 trunks[index]['trunkAdminState'] = str(value)
 
             for index, value in m.vlanTrunkPortDynamicStatus.iteritems():
-                logger.debug("fn=TrunkAPI/get_trunks_from_device/2 : trunk : %s, %s" % (index, value))
+                # logger.debug("TRACE fn=TrunkAPI/get_trunks_from_device/2 : trunk : %s, %s" % (index, value))
                 trunks[index]['trunkOperState'] = str(value)
 
         except snmp.SNMPException, e:
             logger.warn("fn=TrunkAPI/get_trunks_from_device : failed SNMP get for Trunks : %s" % e)
 
-        logger.debug("fn=TrunkAPI/get_trunks_from_device : returning data")
+        logger.debug("fn=TrunkAPI/get_trunks_from_device : returning data : %s trunks entries found" % len(trunks))
         return trunks
 
 
@@ -2456,8 +2599,7 @@ hdlr = logging.handlers.RotatingFileHandler(log_file,
                                             maxBytes=app.config['LOG_MAX_SIZE'],
                                             backupCount=app.config['LOG_BACKUP_COUNT'])
 # we have the PID in each log entry to differentiate parallel processes writing to the log
-FORMAT = "%(asctime)s - %(process)d - %(name)-16s - %(levelname)-7s - %(" \
-         "message)s"
+FORMAT = "%(asctime)s - %(process)d - %(name)-16s - %(levelname)-7s - %(message)s"
 formatter = logging.Formatter(FORMAT)
 hdlr.setFormatter(formatter)
 logger.addHandler(hdlr)
@@ -2476,6 +2618,7 @@ logger.info('SNMP cache = %ss' % app.config['SNMP_CACHE'])
 logger.info('SNMP timeout = %ss' % app.config['SNMP_TIMEOUT'])
 logger.info('SNMP retries = %ss' % app.config['SNMP_RETRIES'])
 
+# FIXME : http://stackoverflow.com/questions/2183233/how-to-add-a-custom-loglevel-to-pythons-logging-facility
 
 # -----------------------------------------------------------------------------------
 # add all URLs and their corresponding classes
