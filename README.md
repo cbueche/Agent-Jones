@@ -19,14 +19,15 @@ Features
 
 - Get info from a single device.
 - Save the running-config to startup-config.
-- Assign a port to a VLAN.
+- Assign an interface to a VLAN.
 - Get the vlan list from a device (currently only native vlans).
 - Get the voice-vlan for an interface.
 - GET interfaces from a device. Option to list the MAC addresses of devices connected to each port.
 - Configure an interface : adminStatus and ifAlias (called description in Cisco language).
-- List the connected MAC addresses : MAC (ethernet) to port mappings from a device.
-- CDP information for each port.
-- Get DHCP snooping information
+- List the connected MAC addresses : MAC (ethernet) to interface mappings from a device.
+- CDP information for each interface.
+- DHCP snooping information for each interface.
+- Trunk status for each interface.
 - Get the interface counters of one interface.
 - Get the ARP table (MAC to IP).
 - SNMP get or walk on a OID
@@ -105,7 +106,7 @@ Dependencies
 ------------
 
 - works as a virtualenv to protect your instance from courageaous system-admins using OS-upgrade without too much knowledge.
-- python 2.6 (might work for higher versions)
+- python 2.7 (might work for 2.6)
 
 
 Extension / development
