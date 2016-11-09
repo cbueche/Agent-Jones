@@ -9,7 +9,7 @@ Release notes
 - replace deprecated flask.ext.httpauth by flask_httpauth
 - enhance MIB-load logged information during start
 - replace SNMP get by SNMP bulk-get
-- move several debug statements to the TRACE level
+- move several debug statements to the newly added TRACE level. You need to add `TRACE = False` in the top-level of the config.py's Config class. See the example in `etc/templates/config_template.py`.
 
 11.5.2016
 ---------
