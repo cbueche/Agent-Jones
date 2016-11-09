@@ -914,7 +914,7 @@ class OldInterfaceAPI(Resource):
 class InterfaceAPI(Resource):
     __doc__ = '''{
         "name": "InterfaceAPI",
-        "description": "FIXME : WARNING : IN CONSTRUCTION. GET interfaces from a device. Adding ?showmac=1 to the URI will list the MAC addresses of devices connected to ports. Adding ?showvlannames=1 will show the vlan names for each vlan. Adding ?showpoe=1 will provide the power consumption for each port. Adding ?showcdp=1 will provide CDP information for each port. Adding ?showdhcp=1 will collect DHCP snooping information for each port. All these options add significant time and overhead to the collection process.",
+        "description": "GET interfaces from a device. Adding ?showmac=1 to the URI will list the MAC addresses of devices connected to ports. Adding ?showvlannames=1 will show the vlan names for each vlan. Adding ?showpoe=1 will provide the power consumption for each port. Adding ?showcdp=1 will provide CDP information for each port. Adding ?showdhcp=1 will collect DHCP snooping information for each port. Adding showtrunks=1 will collect trunk attributes for each interfaces. All these options add significant time and overhead to the collection process.",
         "auth": true,
         "auth-type": "BasicAuth",
         "params": [],
@@ -1021,44 +1021,44 @@ class InterfaceAPI(Resource):
 
         logger.debug('fn=InterfaceAPI/get : %s : get ifDescr' % devicename)
         for index, desc in m.ifDescr.iteritems():
-            # logger.debug('fn=InterfaceAPI/get : %s : index = %s, desc = %s' % (devicename, index, desc))
+            logger.trace('fn=InterfaceAPI/get : %s : index = %s, desc = %s' % (devicename, index, desc))
             interfaces[index]['ifDescr'] = desc
             # FIXME :
             interfaces[index]['physicalIndex'] = entities_if_to_chassis.get(desc, None)
 
         logger.debug('fn=InterfaceAPI/get : %s : get ifAdminStatus' % devicename)
         for index, adminstatus in m.ifAdminStatus.iteritems():
-            # logger.debug('fn=InterfaceAPI/get : %s : index = %s, admin-status = %s' % (devicename, index, adminstatus))
+            logger.trace('fn=InterfaceAPI/get : %s : index = %s, admin-status = %s' % (devicename, index, adminstatus))
             interfaces[index]['ifAdminStatus'], interfaces[index]['ifAdminStatusText'] = util.translate_status(str(adminstatus))
 
         logger.debug('fn=InterfaceAPI/get : %s : get ifOperStatus' % devicename)
         for index, operstatus in m.ifOperStatus.iteritems():
-            # logger.debug('fn=InterfaceAPI/get : %s : index = %s, oper-status = %s' % (devicename, index, operstatus))
+            logger.trace('fn=InterfaceAPI/get : %s : index = %s, oper-status = %s' % (devicename, index, operstatus))
             interfaces[index]['ifOperStatus'], interfaces[index]['ifOperStatusText'] = util.translate_status(str(operstatus))
 
         logger.debug('fn=InterfaceAPI/get : %s : get ifType' % devicename)
         for index, iftype in m.ifType.iteritems():
-            # logger.debug('fn=InterfaceAPI/get : %s : index = %s, iftype = %s' % (devicename, index, iftype))
+            logger.trace('fn=InterfaceAPI/get : %s : index = %s, iftype = %s' % (devicename, index, iftype))
             interfaces[index]['ifType'] = str(iftype)
 
         logger.debug('fn=InterfaceAPI/get : %s : get ifMtu' % devicename)
         for index, ifmtu in m.ifMtu.iteritems():
-            # logger.debug('fn=InterfaceAPI/get : %s : index = %s, ifmtu = %s' % (devicename, index, ifmtu))
+            logger.trace('fn=InterfaceAPI/get : %s : index = %s, ifmtu = %s' % (devicename, index, ifmtu))
             interfaces[index]['ifMtu'] = ifmtu
 
         logger.debug('fn=InterfaceAPI/get : %s : get ifSpeed' % devicename)
         for index, ifspeed in m.ifSpeed.iteritems():
-            # logger.debug('fn=InterfaceAPI/get : %s : index = %s, ifspeed = %s' % (devicename, index, ifspeed))
+            logger.trace('fn=InterfaceAPI/get : %s : index = %s, ifspeed = %s' % (devicename, index, ifspeed))
             interfaces[index]['ifSpeed'] = ifspeed
 
         logger.debug('fn=InterfaceAPI/get : %s : get ifAlias' % devicename)
         for index, ifalias in m.ifAlias.iteritems():
-            # logger.debug('fn=InterfaceAPI/get : %s : index = %s, ifalias = %s' % (devicename, index, ifalias))
+            logger.trace('fn=InterfaceAPI/get : %s : index = %s, ifalias = %s' % (devicename, index, ifalias))
             interfaces[index]['ifAlias'] = str(ifalias)
 
         logger.debug('fn=InterfaceAPI/get : %s : get dot3StatsDuplexStatus' % devicename)
         for index, duplex in m.dot3StatsDuplexStatus.iteritems():
-            # logger.debug('fn=InterfaceAPI/get : %s : index = %s, duplex = %s' % (devicename, index, duplex))
+            logger.trace('fn=InterfaceAPI/get : %s : index = %s, duplex = %s' % (devicename, index, duplex))
             interfaces[index]['dot3StatsDuplexStatus'] = str(duplex)
         # add a null value when an index has no entry in the dot3StatsDuplexStatus table
         for interface in interfaces:
@@ -1067,7 +1067,7 @@ class InterfaceAPI(Resource):
 
         logger.debug('fn=InterfaceAPI/get : %s : get vmVlan' % devicename)
         for index, vlan_id in m.vmVlan.iteritems():
-            # logger.debug('fn=InterfaceAPI/get : %s : index = %s, vlan_id = %s' % (devicename, index, vlan_id))
+            logger.trace('fn=InterfaceAPI/get : %s : index = %s, vlan_id = %s' % (devicename, index, vlan_id))
             interfaces[index]['vmVlanNative']['nr'] = vlan_id
         # add a null value when an index has no entry in the vmMembershipTable table
         for interface in interfaces:
@@ -1203,14 +1203,14 @@ class InterfaceAPI(Resource):
         tstart = datetime.now()
 
         port_mapping = {}
-        # logger.info('%s : loop over entPhysicalName.iteritems' % devicename)
+        logger.trace('%s : loop over entPhysicalName.iteritems' % devicename)
         counter = 0
         for index, value in m.entPhysicalName.iteritems():
             counter += 1
             port_mapping[index] = value
-            # logger.debug('fn=InterfaceAPI/get_poe : %s : port-mapping : ent-idx=%s, port-name=%s' %
-            #             (devicename, index, port_mapping[index]))
-        # logger.info('loop over entPhysicalName.iteritems done, %s entries found' % counter)
+            logger.trace('fn=InterfaceAPI/get_poe : %s : port-mapping : ent-idx=%s, port-name=%s' %
+                         (devicename, index, port_mapping[index]))
+        logger.trace('loop over entPhysicalName.iteritems done, %s entries found' % counter)
 
 
         # then, get the poe info. Returned entries are indexed by the port-name
@@ -1282,7 +1282,7 @@ class InterfaceAPI(Resource):
         counter = 0
         logger.info('fn=InterfaceAPI/collect_entities : %s : loop over entPhysicalClass' % devicename)
         for index, value in m.entPhysicalClass.iteritems():
-            # logger.debug('TRACE : entPhysicalClass entry %s, %s' % (index, value))
+            logger.trace('entPhysicalClass entry %s, %s' % (index, value))
             entries_entPhysicalClass[index] = value
             counter += 1
         tend = datetime.now()
@@ -1297,7 +1297,7 @@ class InterfaceAPI(Resource):
         counter = 0
         logger.info('fn=InterfaceAPI/collect_entities : %s : loop over entPhysicalName' % devicename)
         for index, value in m.entPhysicalName.iteritems():
-            # logger.debug('TRACE : entPhysicalName entry %s, %s' % (index, value))
+            logger.trace('entPhysicalName entry %s, %s' % (index, value))
             entries_entPhysicalName[index] = value
             counter += 1
         tend = datetime.now()
@@ -1312,7 +1312,7 @@ class InterfaceAPI(Resource):
         counter = 0
         logger.info('fn=InterfaceAPI/collect_entities : %s : loop over entPhysicalContainedIn' % devicename)
         for index, value in m.entPhysicalContainedIn.iteritems():
-            # logger.debug('TRACE : entPhysicalContainedIn entry %s, %s' % (index, value))
+            logger.trace('entPhysicalContainedIn entry %s, %s' % (index, value))
             entries_entPhysicalContainedIn[index] = value
             counter += 1
         tend = datetime.now()
@@ -1337,12 +1337,12 @@ class InterfaceAPI(Resource):
 
         merged_entities = autovivification.AutoVivification()
         for idx, value in entities['entries_entPhysicalClass'].iteritems():
-            # logger.debug('TRACE : merging index %s of class %s' % (idx, value))
+            logger.trace('merging index %s of class %s' % (idx, value))
             merged_entities[idx]['class'] = value
             merged_entities[idx]['name'] = entities['entries_entPhysicalName'].get(idx, None)
             merged_entities[idx]['cin'] = entities['entries_entPhysicalContainedIn'].get(idx, None)
 
-        # logger.info('TRACE : %s : done merging entities' % devicename)
+        logger.trace('%s : done merging entities' % devicename)
 
         return merged_entities
 
@@ -1359,12 +1359,12 @@ class InterfaceAPI(Resource):
         for idx, entry in merged_entities.iteritems():
             # only ports
             if entry['class'] == 10:  # entPhysicalClass=10 are ports (interfaces of some sort)
-                # logger.debug('TRACE : %s : port %s' % (devicename, entry['name']))
-                # entPhysicalClass=3 are chassis, this function
+                logger.trace('%s : port %s' % (devicename, entry['name']))
+                # entPhysicalClass=3 are chassis
                 chassis_idx = self.find_parent_of_type(idx, 3, merged_entities)
                 port_table[entry['name']] = chassis_idx
 
-        # logger.info('TRACE : %s : done get_ports' % devicename)
+        logger.trace('%s : done get_ports' % devicename)
 
         return port_table
 
@@ -1374,18 +1374,18 @@ class InterfaceAPI(Resource):
         # this is a recursive function walking up the entity tree to find
         # the first ancestor of desired type
 
-        # logger.debug('TRACE : find_parent_of_type %s for entity %s' % (searched_parent_type, port_idx))
+        logger.trace('find_parent_of_type %s for entity %s' % (searched_parent_type, port_idx))
 
         parent_idx = merged_entities[port_idx]['cin']
-        # logger.debug('TRACE : parent of port %s is %s' % (port_idx, parent_idx))
+        logger.trace('parent of port %s is %s' % (port_idx, parent_idx))
 
         type_of_parent = merged_entities[parent_idx]['class']
-        # logger.debug('TRACE : type of parent %s is %s' % (parent_idx, type_of_parent))
+        logger.trace('type of parent %s is %s' % (parent_idx, type_of_parent))
 
         # is the parent already the desired type ?
         if type_of_parent == searched_parent_type:
             # yes !
-            # logger.debug('TRACE : parent %s has the searched type %s' % (parent_idx, searched_parent_type))
+            logger.trace('parent %s has the searched type %s' % (parent_idx, searched_parent_type))
             return parent_idx
         else:
             # no, go deeper
@@ -1625,10 +1625,10 @@ class MacAPI(Resource):
                                 mac = netaddr.EUI(mac_entry)
                                 vendor = mac.oui.registration().org
                             except Exception, e:
-                                # logger.info("fn=MacAPI/get_macs_from_device : %s : vendor lookup failed : %s" % (devicename, e))
+                                logger.trace("fn=MacAPI/get_macs_from_device : %s : vendor lookup failed : %s" % (devicename, e))
                                 vendor = 'unknown'
 
-                            # logger.debug("TRACE: idx=%s, vlan=%s, mac=%s, vendor=%s" % (ifindex, vlan_nr, str(mac), vendor))
+                            logger.trace("idx=%s, vlan=%s, mac=%s, vendor=%s" % (ifindex, vlan_nr, str(mac), vendor))
                             mac_record = {'mac': str(mac), 'vendor': vendor, 'vlan': vlan_nr}
                             if ifindex in macs:
                                 macs[ifindex].append(mac_record)
@@ -1841,11 +1841,11 @@ class TrunkAPI(Resource):
         try:
 
             for index, value in m.vlanTrunkPortDynamicState.iteritems():
-                # logger.debug("TRACE fn=TrunkAPI/get_trunks_from_device/1 : trunk : %s, %s" % (index, value))
+                logger.trace("fn=TrunkAPI/get_trunks_from_device/1 : trunk : %s, %s" % (index, value))
                 trunks[index]['trunkAdminState'] = str(value)
 
             for index, value in m.vlanTrunkPortDynamicStatus.iteritems():
-                # logger.debug("TRACE fn=TrunkAPI/get_trunks_from_device/2 : trunk : %s, %s" % (index, value))
+                logger.trace("fn=TrunkAPI/get_trunks_from_device/2 : trunk : %s, %s" % (index, value))
                 trunks[index]['trunkOperState'] = str(value)
 
         except snmp.SNMPException, e:
@@ -2106,8 +2106,8 @@ class DHCPsnoopAPI(Resource):
                 status = binding_status.get(cdsBindingsStatus[index], 'unsupported')
                 hostname = cdsBindingsHostname.get(index, None)
 
-                # logger.debug('TRACE fn=DHCPsnoopAPI/get_dhcp_snooping_from_device %s : vlan=%s, mac=%s, vendor=%s, address_type=%s, ip=%s, interface_idx=%s, leased_time=%s, status=%s, hostname=%s' %
-                #             (devicename, vlan, mac_f, vendor, address_type, ip, interface_idx, leased_time, status, hostname))
+                logger.trace('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device %s : vlan=%s, mac=%s, vendor=%s, address_type=%s, ip=%s, interface_idx=%s, leased_time=%s, status=%s, hostname=%s' %
+                             (devicename, vlan, mac_f, vendor, address_type, ip, interface_idx, leased_time, status, hostname))
                 dhcp_entry = {'interface_idx': interface_idx,
                               'vlan': vlan,
                               'mac': mac_f,
@@ -2230,7 +2230,7 @@ class vlanlistAPI(Resource):
         try:
 
             for index, value in m.vmVoiceVlanId.iteritems():
-                # logger.debug('fn=vlanlistAPI/get_voice_vlans : %s : got voice vlan %s for index %s' % (devicename, value, index))
+                logger.trace('fn=vlanlistAPI/get_voice_vlans : %s : got voice vlan %s for index %s' % (devicename, value, index))
                 voice_vlans[index] = str(value)
 
         except Exception, e:
@@ -2591,6 +2591,12 @@ api = Api(app)
 # logging
 # -----------------------------------------------------------------------------------
 
+# add TRACE log level
+logging.TRACE = 5
+logging.addLevelName(logging.TRACE, "TRACE")
+logging.Logger.trace = lambda inst, msg, *args, **kwargs: inst.log(logging.TRACE, msg, *args, **kwargs)
+logging.trace = lambda msg, *args, **kwargs: logging.log(logging.TRACE, msg, *args, **kwargs)
+
 log_file = app.config['LOGFILE']
 global logger
 logger = logging.getLogger('aj')
@@ -2604,10 +2610,13 @@ hdlr.setFormatter(formatter)
 logger.addHandler(hdlr)
 # avoid propagation to console
 logger.propagate = False
+
+# level from config.
+logger.setLevel(logging.INFO)
 if app.config['DEBUG']:
-    logger.setLevel(logging.DEBUG)
-else:
-    logger.setLevel(logging.INFO)
+     logger.setLevel(logging.DEBUG)
+if app.config['TRACE']:
+    logger.setLevel(logging.TRACE)
 
 logger.info('version : <%s>' % __version__)
 logger.info('environment : <%s>' % app.config['ENVI'])
@@ -2616,8 +2625,6 @@ logger.info('mandate_uuid : <%s>' % mandate_uuid)
 logger.info('SNMP cache = %ss' % app.config['SNMP_CACHE'])
 logger.info('SNMP timeout = %ss' % app.config['SNMP_TIMEOUT'])
 logger.info('SNMP retries = %ss' % app.config['SNMP_RETRIES'])
-
-# FIXME : http://stackoverflow.com/questions/2183233/how-to-add-a-custom-loglevel-to-pythons-logging-facility
 
 # -----------------------------------------------------------------------------------
 # add all URLs and their corresponding classes
