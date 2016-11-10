@@ -88,6 +88,7 @@ A corresponding curl command would be something like:
 
 If you expect any long output, you need to pass “terminal length 0” as first command. In fact, I would recommend to always pass it.
 
+[See more examples](doc/examples.md).
 
 
 API Documentation
