@@ -1151,25 +1151,29 @@ class MacAPI(Resource):
         for index, value in m.vtpVlanState.iteritems():
             managementDomainIndex, vtpVlanIndex = index
             vlans[vtpVlanIndex]['state'] = str(value)
-        logger.debug('fn=MacAPI/get_macs_from_device : %s : got %s vlans' % (devicename, len(vlans)))
+        vlan_numbers = len(vlans)
+        logger.debug('fn=MacAPI/get_macs_from_device : %s : got %s vlans' % (devicename, vlan_numbers))
 
         # now loop across every VLAN
         macs = {}
         total_mac_entries = 0
+        vlan_counter = 0
         for vlan_nr in vlans:
 
             mac_entries = 0
             vlan_type = vlans[vlan_nr]['type']
             vlan_state = vlans[vlan_nr]['state']
             vlan_name = vlans[vlan_nr]['name']
-            logger.debug('fn=MacAPI/get_macs_from_device : checking vlan_nr = %s, name = %s, type = %s, state = %s' % (vlan_nr, vlan_name, vlan_type, vlan_state))
+            vlan_counter += 1
+            logger.debug('fn=MacAPI/get_macs_from_device : checking vlan_nr = %s (%s of %s), name = %s, type = %s, state = %s' % (vlan_nr, vlan_counter, vlan_numbers, vlan_name, vlan_type, vlan_state))
 
             # only ethernet VLANs
             if vlan_type == 'ethernet(1)' and vlan_state == 'operational(1)':
                 logger.debug('fn=MacAPI/get_macs_from_device : %s : polling vlan %s (%s)' % (devicename, vlan_nr, vlan_name))
 
                 # VLAN-based community, have a local manager for each VLAN
-                # this works probably only for Cisco
+                # this works probably only for Cisco, where it is called "community string indexing"
+                # http://www.cisco.com/c/en/us/support/docs/ip/simple-network-management-protocol-snmp/40367-camsnmp40367.html
                 vlan_community = "%s@%s" % (ro_community, vlan_nr)
                 # can be slow for big switches, so try only once but longer
                 lm = M(host=devicename,
