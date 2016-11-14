@@ -1,6 +1,11 @@
 Release notes
 =============
 
+14.11.2016
+----------
+
+- add ifName to the interface API call to match the physical entity interfaces under IOS-XE
+
 9.11.2016
 ---------
 

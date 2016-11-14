@@ -17,7 +17,7 @@ Repository & documentation : https://github.com/cbueche/Agent-Jones
 # -----------------------------------------------------------------------------------
 
 # update doc/RELEASES.md when touching this
-__version__ = '9.11.2016'
+__version__ = '14.11.2016'
 
 from flask import Flask, url_for, make_response, jsonify, send_from_directory, request
 from flask import render_template
@@ -605,7 +605,7 @@ class InterfaceAPI(Resource):
             trunkAPI = TrunkAPI()
             trunks_entries = trunkAPI.get_trunks_from_device(devicename, m, ro_community)
 
-        # here, we collect all properties ("columns" in Snimpy speak) from the ifTable
+        # here, we collect all properties ("columns" in Snimpy speak) from the ifTable & ifXTable
         # we do this with single iteritems() loops, as they use Bulk-Get, which is much faster
         # the results of each loop enriches a "giant dict".
         # At the end, we do a final loop to add the stuff collected above
@@ -613,12 +613,17 @@ class InterfaceAPI(Resource):
         # the "giant dict" indexed by the ifIndex
         interfaces = autovivification.AutoVivification()
 
+        # ifDescr has most of the time the format "GigabitEthernet1/0/1"
         logger.debug('fn=InterfaceAPI/get : %s : get ifDescr' % devicename)
         for index, desc in m.ifDescr.iteritems():
             logger.trace('fn=InterfaceAPI/get : %s : index = %s, desc = %s' % (devicename, index, desc))
             interfaces[index]['ifDescr'] = desc
-            # FIXME :
-            interfaces[index]['physicalIndex'] = entities_if_to_chassis.get(desc, None)
+
+        # ifName has most of the time the format "Gi1/0/1"
+        logger.debug('fn=InterfaceAPI/get : %s : get ifName' % devicename)
+        for index, name in m.ifName.iteritems():
+            logger.trace('fn=InterfaceAPI/get : %s : index = %s, name = %s' % (devicename, index, name))
+            interfaces[index]['ifName'] = name
 
         logger.debug('fn=InterfaceAPI/get : %s : get ifAdminStatus' % devicename)
         for index, adminstatus in m.ifAdminStatus.iteritems():
@@ -673,6 +678,23 @@ class InterfaceAPI(Resource):
 
             # ease the flatify below
             interfaces[index]['index'] = index
+
+            # try to map the ifDescr / ifName to a physical entity, namely the enclosing chassis
+            # 1. try ifDesc first
+            desc = interfaces[index]['ifDescr']
+            name = interfaces[index]['ifName']
+            if desc in entities_if_to_chassis:
+                interfaces[index]['physicalIndex'] = entities_if_to_chassis[desc]
+                logger.trace('fn=InterfaceAPI/get : %s : ifDescr (%s) found in physical entities' % (devicename, desc))
+            # 2. try ifName (works for IOS-XE)
+            elif name in entities_if_to_chassis:
+                interfaces[index]['physicalIndex'] = entities_if_to_chassis[name]
+                logger.trace('fn=InterfaceAPI/get : %s : ifName (%s) found in physical entities' % (devicename, name))
+            # this interface does not exist in entity table. That would be normal in a lot of cases,
+            # e.g. interface containers without module, virtual interfaces, trunks, etc.
+            else:
+                interfaces[index]['physicalIndex'] = None
+                logger.trace('fn=InterfaceAPI/get : %s : ifDescr (%s) or ifName (%s) not found in physical entities' % (devicename, desc,name))
 
             # VLANs (data and voice)
             if showvlannames:
@@ -876,7 +898,7 @@ class InterfaceAPI(Resource):
         counter = 0
         logger.info('fn=InterfaceAPI/collect_entities : %s : loop over entPhysicalClass' % devicename)
         for index, value in m.entPhysicalClass.iteritems():
-            logger.trace('entPhysicalClass entry %s, %s' % (index, value))
+            logger.trace('fn=InterfaceAPI/collect_entities : %s : entPhysicalClass entry %s, %s' % (devicename, index, value))
             entries_entPhysicalClass[index] = value
             counter += 1
         tend = datetime.now()
@@ -891,7 +913,7 @@ class InterfaceAPI(Resource):
         counter = 0
         logger.info('fn=InterfaceAPI/collect_entities : %s : loop over entPhysicalName' % devicename)
         for index, value in m.entPhysicalName.iteritems():
-            logger.trace('entPhysicalName entry %s, %s' % (index, value))
+            logger.trace('fn=InterfaceAPI/collect_entities : %s : entPhysicalName entry %s, %s' % (devicename, index, value))
             entries_entPhysicalName[index] = value
             counter += 1
         tend = datetime.now()
@@ -906,7 +928,7 @@ class InterfaceAPI(Resource):
         counter = 0
         logger.info('fn=InterfaceAPI/collect_entities : %s : loop over entPhysicalContainedIn' % devicename)
         for index, value in m.entPhysicalContainedIn.iteritems():
-            logger.trace('entPhysicalContainedIn entry %s, %s' % (index, value))
+            logger.trace('fn=InterfaceAPI/collect_entities : %s : entPhysicalContainedIn entry %s, %s' % (devicename, index, value))
             entries_entPhysicalContainedIn[index] = value
             counter += 1
         tend = datetime.now()
@@ -931,12 +953,12 @@ class InterfaceAPI(Resource):
 
         merged_entities = autovivification.AutoVivification()
         for idx, value in entities['entries_entPhysicalClass'].iteritems():
-            logger.trace('merging index %s of class %s' % (idx, value))
+            logger.trace('fn=InterfaceAPI/merge_entities : %s : merging index %s of class %s' % (devicename, idx, value))
             merged_entities[idx]['class'] = value
             merged_entities[idx]['name'] = entities['entries_entPhysicalName'].get(idx, None)
             merged_entities[idx]['cin'] = entities['entries_entPhysicalContainedIn'].get(idx, None)
 
-        logger.trace('%s : done merging entities' % devicename)
+        logger.trace('fn=InterfaceAPI/merge_entities : %s : done merging entities' % devicename)
 
         return merged_entities
 
@@ -953,37 +975,38 @@ class InterfaceAPI(Resource):
         for idx, entry in merged_entities.iteritems():
             # only ports
             if entry['class'] == 10:  # entPhysicalClass=10 are ports (interfaces of some sort)
-                logger.trace('%s : port %s' % (devicename, entry['name']))
+                logger.trace('fn=InterfaceAPI/get_ports : %s : searching for port %s' % (devicename, entry['name']))
                 # entPhysicalClass=3 are chassis
-                chassis_idx = self.find_parent_of_type(idx, 3, merged_entities)
+                chassis_idx = self.find_parent_of_type(devicename, idx, 3, merged_entities)
                 port_table[entry['name']] = chassis_idx
+                logger.trace('fn=InterfaceAPI/get_ports : %s : port %s is part of chassis %s' % (devicename, entry['name'], chassis_idx))
 
-        logger.trace('%s : done get_ports' % devicename)
 
+        logger.trace('fn=InterfaceAPI/get_ports : %s : done get_ports' % devicename)
         return port_table
 
     # -----------------------------------------------------------------------------------
-    def find_parent_of_type(self, port_idx, searched_parent_type, merged_entities):
+    def find_parent_of_type(self, devicename, port_idx, searched_parent_type, merged_entities):
 
         # this is a recursive function walking up the entity tree to find
         # the first ancestor of desired type
 
-        logger.trace('find_parent_of_type %s for entity %s' % (searched_parent_type, port_idx))
+        logger.trace('fn=InterfaceAPI/find_parent_of_type : %s : find_parent_of_type %s for entity %s' % (devicename, searched_parent_type, port_idx))
 
         parent_idx = merged_entities[port_idx]['cin']
-        logger.trace('parent of port %s is %s' % (port_idx, parent_idx))
+        logger.trace('fn=InterfaceAPI/find_parent_of_type : %s : parent of port %s is %s' % (devicename, port_idx, parent_idx))
 
         type_of_parent = merged_entities[parent_idx]['class']
-        logger.trace('type of parent %s is %s' % (parent_idx, type_of_parent))
+        logger.trace('fn=InterfaceAPI/find_parent_of_type : %s : type of parent %s is %s' % (devicename, parent_idx, type_of_parent))
 
         # is the parent already the desired type ?
         if type_of_parent == searched_parent_type:
             # yes !
-            logger.trace('parent %s has the searched type %s' % (parent_idx, searched_parent_type))
+            logger.trace('fn=InterfaceAPI/find_parent_of_type : %s : parent %s has the searched type %s, search done' % (devicename, parent_idx, searched_parent_type))
             return parent_idx
         else:
             # no, go deeper
-            return self.find_parent_of_type(parent_idx, 3, merged_entities)
+            return self.find_parent_of_type(devicename, parent_idx, 3, merged_entities)
 
 
 # -----------------------------------------------------------------------------------
@@ -1165,7 +1188,7 @@ class MacAPI(Resource):
             vlan_state = vlans[vlan_nr]['state']
             vlan_name = vlans[vlan_nr]['name']
             vlan_counter += 1
-            logger.debug('fn=MacAPI/get_macs_from_device : checking vlan_nr = %s (%s of %s), name = %s, type = %s, state = %s' % (vlan_nr, vlan_counter, vlan_numbers, vlan_name, vlan_type, vlan_state))
+            logger.debug('fn=MacAPI/get_macs_from_device : %s : checking vlan_nr = %s (%s of %s), name = %s, type = %s, state = %s' % (devicename, vlan_nr, vlan_counter, vlan_numbers, vlan_name, vlan_type, vlan_state))
 
             # only ethernet VLANs
             if vlan_type == 'ethernet(1)' and vlan_state == 'operational(1)':
@@ -1187,7 +1210,7 @@ class MacAPI(Resource):
                 # we pull them in an large block so we can catch timeouts for broken IOS versions
                 # happened on a big stack of 8 Cisco 3750 running 12.2(46)SE (fc2)
                 try:
-                    logger.debug('fn=MacAPI/get_macs_from_device : trying to pull all mac_entries for vlan %s (%s)' % (vlan_nr, vlan_name))
+                    logger.debug('fn=MacAPI/get_macs_from_device : %s : trying to pull all mac_entries for vlan %s (%s)' % (devicename, vlan_nr, vlan_name))
 
                     dot1dTpFdbAddress = {}
                     dot1dTpFdbPort = {}
@@ -1196,18 +1219,18 @@ class MacAPI(Resource):
                     for index, mac_entry in lm.dot1dTpFdbAddress.iteritems():
                         dot1dTpFdbAddress[index] = mac_entry
                         mac_entries += 1
-                    logger.debug('fn=MacAPI/get_macs_from_device : got %s dot1dTpFdbAddress entries for vlan %s (%s)' % (len(dot1dTpFdbAddress), vlan_nr, vlan_name))
+                    logger.debug('fn=MacAPI/get_macs_from_device : %s : got %s dot1dTpFdbAddress entries for vlan %s (%s)' % (devicename, len(dot1dTpFdbAddress), vlan_nr, vlan_name))
                     if mac_entries > 0:
                         # vlan is interesting, it has at least 1 MAC
                         for index, port in lm.dot1dTpFdbPort.iteritems():
                             dot1dTpFdbPort[index] = port
-                        logger.debug('fn=MacAPI/get_macs_from_device : got %s dot1dTpFdbPort entries for vlan %s (%s)' % (len(dot1dTpFdbPort), vlan_nr, vlan_name))
+                        logger.debug('fn=MacAPI/get_macs_from_device : %s : got %s dot1dTpFdbPort entries for vlan %s (%s)' % (devicename, len(dot1dTpFdbPort), vlan_nr, vlan_name))
 
                         for index, ifindex in lm.dot1dBasePortIfIndex.iteritems():
                             dot1dBasePortIfIndex[index] = ifindex
-                        logger.debug('fn=MacAPI/get_macs_from_device : got %s dot1dBasePortIfIndex entries for vlan %s (%s)' % (len(dot1dBasePortIfIndex), vlan_nr, vlan_name))
+                        logger.debug('fn=MacAPI/get_macs_from_device : %s : got %s dot1dBasePortIfIndex entries for vlan %s (%s)' % (devicename, len(dot1dBasePortIfIndex), vlan_nr, vlan_name))
 
-                        logger.debug('fn=MacAPI/get_macs_from_device : enrich MAC table for vlan %s (%s)' % (vlan_nr, vlan_name))
+                        logger.debug('fn=MacAPI/get_macs_from_device : %s : enrich MAC table for vlan %s (%s)' % (devicename, vlan_nr, vlan_name))
                         for mac_entry in dot1dTpFdbAddress:
                             port = dot1dTpFdbPort[mac_entry]
                             if port == None:
@@ -1234,18 +1257,18 @@ class MacAPI(Resource):
                                 macs[ifindex] = [mac_record]
 
                     else:
-                        logger.debug('fn=MacAPI/get_macs_from_device : vlan %s (%s) skipped, no MAC found on it' % (vlan_nr, vlan_name))
+                        logger.debug('fn=MacAPI/get_macs_from_device : %s : vlan %s (%s) skipped, no MAC found on it' % (devicename, vlan_nr, vlan_name))
 
                 except:
-                    logger.info("fn=MacAPI/get_macs_from_device : failed, probably an unused VLAN (%s) on a buggy IOS producing SNMP timeout. Ignoring this VLAN" % (vlan_nr))
+                    logger.info("fn=MacAPI/get_macs_from_device : %s : failed, probably an unused VLAN (%s) on a buggy IOS producing SNMP timeout. Ignoring this VLAN" % (devicename, vlan_nr))
 
             else:
                 logger.debug('fn=MacAPI/get_macs_from_device : %s : skipping vlan %s (%s)' % (devicename, vlan_nr, vlan_name))
 
-            logger.debug("fn=MacAPI/get_macs_from_device : %s mac entries found in vlan %s (%s)" % (mac_entries, vlan_nr, vlan_name))
+            logger.debug("fn=MacAPI/get_macs_from_device : %s : %s mac entries found in vlan %s (%s)" % (devicename, mac_entries, vlan_nr, vlan_name))
             total_mac_entries += mac_entries
 
-        logger.debug("fn=MacAPI/get_macs_from_device : returning data, total %s mac entries found" % total_mac_entries)
+        logger.debug("fn=MacAPI/get_macs_from_device : %s : returning data, total %s mac entries found" % (devicename, total_mac_entries))
         return macs, total_mac_entries
 
 
