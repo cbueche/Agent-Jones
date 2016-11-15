@@ -17,7 +17,7 @@ Repository & documentation : https://github.com/cbueche/Agent-Jones
 # -----------------------------------------------------------------------------------
 
 # update doc/RELEASES.md when touching this
-__version__ = '14.11.2016'
+__version__ = '15.11.2016'
 
 from flask import Flask, url_for, make_response, jsonify, send_from_directory, request
 from flask import render_template
@@ -674,6 +674,7 @@ class InterfaceAPI(Resource):
                 interfaces[interface]['vmVlanNative']['nr'] = None
 
         # now we add the stuff that we collected above the ifTable/get-bulk operations
+        logger.debug('fn=InterfaceAPI/get : %s : loop over the interfaces' % devicename)
         for index in interfaces:
 
             # ease the flatify below
@@ -682,6 +683,7 @@ class InterfaceAPI(Resource):
             # try to map the ifDescr / ifName to a physical entity, namely the enclosing chassis
             # 1. try ifDesc first
             desc = interfaces[index]['ifDescr']
+            logger.debug('fn=InterfaceAPI/get : %s : matching interface %s (%s)' % (devicename, index, desc))
             name = interfaces[index]['ifName']
             if desc in entities_if_to_chassis:
                 interfaces[index]['physicalIndex'] = entities_if_to_chassis[desc]
@@ -701,6 +703,7 @@ class InterfaceAPI(Resource):
 
                 # data vlans
                 # use a temp variable for clarity
+                logger.trace('fn=InterfaceAPI/get : %s : adding vlan names to %s' % (devicename, desc))
                 vtpVlanIndex = interfaces[index]['vmVlanNative']['nr']
                 if vtpVlanIndex in data_vlans:
                     data_vlan_name = data_vlans[vtpVlanIndex]['name']
@@ -727,6 +730,7 @@ class InterfaceAPI(Resource):
 
             # Macs
             if showmac:
+                logger.trace('fn=InterfaceAPI/get : %s : adding MAC collection to %s' % (devicename, desc))
                 if index in macs:
                     interfaces[index]['macs'] = macs[index]
                 else:
@@ -734,6 +738,7 @@ class InterfaceAPI(Resource):
 
             # POE
             if showpoe:
+                logger.trace('fn=InterfaceAPI/get : %s : adding POE info to %s' % (devicename, desc))
                 if interfaces[index]['ifDescr'] in poe:
                     interfaces[index]['poeStatus'] = str(poe[interfaces[index]['ifDescr']]['status'])
                     interfaces[index]['poePower'] = poe[interfaces[index]['ifDescr']]['power']
@@ -743,6 +748,7 @@ class InterfaceAPI(Resource):
 
             # CDP
             if showcdp:
+                logger.trace('fn=InterfaceAPI/get : %s : adding CDP info to %s' % (devicename, desc))
                 interfaces[index]['cdp'] = {}
                 if index in cdps:
                     address_type = cdps[index]['cdpCacheAddressType']
@@ -767,6 +773,7 @@ class InterfaceAPI(Resource):
 
             # DHCP
             if showdhcp:
+                logger.trace('fn=InterfaceAPI/get : %s : adding DHCP info to %s' % (devicename, desc))
                 # an interface might have more than one MAC-IP binding so
                 # make this is a list
                 interfaces[index]['dhcpsnoop'] = []
@@ -782,6 +789,7 @@ class InterfaceAPI(Resource):
 
             # Trunks
             if showtrunks:
+                logger.trace('fn=InterfaceAPI/get : %s : adding trunks info to %s' % (devicename, desc))
                 if index in trunks_entries:
                     interfaces[index]['trunkAdminState'] = trunks_entries[index]['trunkAdminState']
                     interfaces[index]['trunkOperState'] = trunks_entries[index]['trunkOperState']
