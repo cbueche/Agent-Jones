@@ -1,6 +1,11 @@
 Release notes
 =============
 
+21.11.2016
+----------
+
+- add vendorType to the interface table. Details for the value in CISCO-ENTITY-VENDORTYPE-OID-MIB
+
 14.11.2016
 ----------
 
