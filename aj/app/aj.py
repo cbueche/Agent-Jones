@@ -17,7 +17,7 @@ Repository & documentation : https://github.com/cbueche/Agent-Jones
 # -----------------------------------------------------------------------------------
 
 # update doc/RELEASES.md when touching this
-__version__ = '15.11.2016'
+__version__ = '21.11.2016'
 
 from flask import Flask, url_for, make_response, jsonify, send_from_directory, request
 from flask import render_template
@@ -57,6 +57,7 @@ import utils
 import access_checks
 import error_handling
 import sysoidan
+import entity_vendortype
 import sshcmd
 
 # Snimpy SNMP lib and MIB loading
@@ -125,6 +126,9 @@ load(mib_path + "CISCO-DHCP-SNOOPING-MIB.my")
 
 # ARP
 load(mib_path + "IP-MIB.my")
+
+# VendorType matching
+load(mib_path + "CISCO-ENTITY-VENDORTYPE-OID-MIB.my")
 
 
 # -----------------------------------------------------------------------------------
@@ -686,17 +690,22 @@ class InterfaceAPI(Resource):
             logger.debug('fn=InterfaceAPI/get : %s : matching interface %s (%s)' % (devicename, index, desc))
             name = interfaces[index]['ifName']
             if desc in entities_if_to_chassis:
-                interfaces[index]['physicalIndex'] = entities_if_to_chassis[desc]
+                interfaces[index]['physicalIndex'] = entities_if_to_chassis[desc]['chassis']
                 logger.trace('fn=InterfaceAPI/get : %s : ifDescr (%s) found in physical entities' % (devicename, desc))
+                interfaces[index]['vendorType'] = entities_if_to_chassis[desc]['vendtypename']
+
             # 2. try ifName (works for IOS-XE)
             elif name in entities_if_to_chassis:
-                interfaces[index]['physicalIndex'] = entities_if_to_chassis[name]
+                interfaces[index]['physicalIndex'] = entities_if_to_chassis[name]['chassis']
                 logger.trace('fn=InterfaceAPI/get : %s : ifName (%s) found in physical entities' % (devicename, name))
+                interfaces[index]['vendorType'] = entities_if_to_chassis[desc]['vendtypename']
+
             # this interface does not exist in entity table. That would be normal in a lot of cases,
             # e.g. interface containers without module, virtual interfaces, trunks, etc.
             else:
                 interfaces[index]['physicalIndex'] = None
                 logger.trace('fn=InterfaceAPI/get : %s : ifDescr (%s) or ifName (%s) not found in physical entities' % (devicename, desc,name))
+                interfaces[index]['vendorType'] = None
 
             # VLANs (data and voice)
             if showvlannames:
@@ -945,9 +954,25 @@ class InterfaceAPI(Resource):
                                           tdiff.days * 24 * 3600) * 10 ** 6) / 1000
         logger.info('fn=InterfaceAPI/collect_entities : %s : loop over entPhysicalContainedIn done in %s, %s entries found' % (devicename, duration, counter))
 
+        # entPhysicalVendorType
+        entries_entPhysicalVendorType = {}
+        tstart = datetime.now()
+        counter = 0
+        logger.info('fn=InterfaceAPI/collect_entities : %s : loop over entPhysicalVendorType' % devicename)
+        for index, value in m.entPhysicalVendorType.iteritems():
+            logger.trace('fn=InterfaceAPI/collect_entities : %s : entPhysicalVendorType entry %s, %s' % (devicename, index, value))
+            entries_entPhysicalVendorType[index] = value
+            counter += 1
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds +
+                                          tdiff.days * 24 * 3600) * 10 ** 6) / 1000
+        logger.info('fn=InterfaceAPI/collect_entities : %s : loop over entPhysicalVendorType done in %s, %s entries found' % (devicename, duration, counter))
+
         return ({'entries_entPhysicalClass': entries_entPhysicalClass,
                  'entries_entPhysicalName': entries_entPhysicalName,
-                 'entries_entPhysicalContainedIn': entries_entPhysicalContainedIn})
+                 'entries_entPhysicalContainedIn': entries_entPhysicalContainedIn,
+                 'entries_entPhysicalVendorType': entries_entPhysicalVendorType})
 
     # -----------------------------------------------------------------------------------
     def merge_entities(self, entities, devicename):
@@ -965,6 +990,7 @@ class InterfaceAPI(Resource):
             merged_entities[idx]['class'] = value
             merged_entities[idx]['name'] = entities['entries_entPhysicalName'].get(idx, None)
             merged_entities[idx]['cin'] = entities['entries_entPhysicalContainedIn'].get(idx, None)
+            merged_entities[idx]['vendtype'] = entities['entries_entPhysicalVendorType'].get(idx, None)
 
         logger.trace('fn=InterfaceAPI/merge_entities : %s : done merging entities' % devicename)
 
@@ -979,16 +1005,21 @@ class InterfaceAPI(Resource):
 
         logger.info('fn=InterfaceAPI/get_ports : %s : get_ports' % devicename)
 
-        port_table = {}
+        port_table = autovivification.AutoVivification()
         for idx, entry in merged_entities.iteritems():
             # only ports
             if entry['class'] == 10:  # entPhysicalClass=10 are ports (interfaces of some sort)
                 logger.trace('fn=InterfaceAPI/get_ports : %s : searching for port %s' % (devicename, entry['name']))
                 # entPhysicalClass=3 are chassis
                 chassis_idx = self.find_parent_of_type(devicename, idx, 3, merged_entities)
-                port_table[entry['name']] = chassis_idx
+                port_table[entry['name']]['chassis'] = chassis_idx
                 logger.trace('fn=InterfaceAPI/get_ports : %s : port %s is part of chassis %s' % (devicename, entry['name'], chassis_idx))
 
+                # vendortype of port
+                vendor_type_oid = str(entry['vendtype'])
+                vendor_type_name = entityvendortypeoidmap.translate_oid(vendor_type_oid)
+                port_table[entry['name']]['vendtypename'] = vendor_type_name
+                logger.debug('fn=InterfaceAPI/get_ports : %s : port %s has vendor-type %s (%s)' % (devicename, entry['name'], vendor_type_oid, vendor_type_name))
 
         logger.trace('fn=InterfaceAPI/get_ports : %s : done get_ports' % devicename)
         return port_table
@@ -2253,7 +2284,7 @@ mandate_uuid = app.config['MANDATE_UUID']
 logger.info('mandate_uuid : <%s>' % mandate_uuid)
 logger.info('SNMP cache = %ss' % app.config['SNMP_CACHE'])
 logger.info('SNMP timeout = %ss' % app.config['SNMP_TIMEOUT'])
-logger.info('SNMP retries = %ss' % app.config['SNMP_RETRIES'])
+logger.info('SNMP retries = %s' % app.config['SNMP_RETRIES'])
 
 # -----------------------------------------------------------------------------------
 # add all URLs and their corresponding classes
@@ -2382,6 +2413,9 @@ errst = error_handling.Errors()
 
 # sysoid mapping
 sysoidmap = sysoidan.SysOidAn(logger, app.root_path)
+
+# entPhysicalVendorType
+entityvendortypeoidmap = entity_vendortype.EntityVendorType(logger)
 
 # for SSH commands
 commander = sshcmd.SshCmd(logger)
