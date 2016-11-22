@@ -2284,7 +2284,7 @@ mandate_uuid = app.config['MANDATE_UUID']
 logger.info('mandate_uuid : <%s>' % mandate_uuid)
 logger.info('SNMP cache = %ss' % app.config['SNMP_CACHE'])
 logger.info('SNMP timeout = %ss' % app.config['SNMP_TIMEOUT'])
-logger.info('SNMP retries = %ss' % app.config['SNMP_RETRIES'])
+logger.info('SNMP retries = %s' % app.config['SNMP_RETRIES'])
 
 # -----------------------------------------------------------------------------------
 # add all URLs and their corresponding classes
