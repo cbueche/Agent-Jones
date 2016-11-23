@@ -698,7 +698,7 @@ class InterfaceAPI(Resource):
             elif name in entities_if_to_chassis:
                 interfaces[index]['physicalIndex'] = entities_if_to_chassis[name]['chassis']
                 logger.trace('fn=InterfaceAPI/get : %s : ifName (%s) found in physical entities' % (devicename, name))
-                interfaces[index]['vendorType'] = entities_if_to_chassis[desc]['vendtypename']
+                interfaces[index]['vendorType'] = entities_if_to_chassis[name]['vendtypename']
 
             # this interface does not exist in entity table. That would be normal in a lot of cases,
             # e.g. interface containers without module, virtual interfaces, trunks, etc.
