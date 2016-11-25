@@ -1,6 +1,11 @@
 Release notes
 =============
 
+25.11.2016
+----------
+
+- better logging for ssh commands
+
 23.11.2016
 ----------
 

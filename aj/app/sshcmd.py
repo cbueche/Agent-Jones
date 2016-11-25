@@ -47,7 +47,7 @@ class SshCmd():
         return a status, error-list, and the unfiltered output from the device
         '''
 
-        self.logger.debug('device=%s, user=%s, driver=%s' % (device, user, driver))
+        self.logger.info('fn=sshcmd/run_by_ssh : %s : user=%s, driver=%s, cmds=%s' % (device, user, driver, cmdlist))
 
         # that's a bit dumb, python doesn't allow to import from a variable
         if driver == 'aix':
@@ -89,21 +89,21 @@ class SshCmd():
         output_global = ''
         output_indexed = []
         try:
-            self.logger.debug('connect to %s' % device)
+            self.logger.debug('fn=sshcmd/run_by_ssh : %s : connecting' % device)
             conn = self.SSH2()
             conn.set_driver(driver)
             conn.connect(device)
-            self.logger.debug('trying to login using %s' % user)
+            self.logger.debug('fn=sshcmd/run_by_ssh : %s : login using %s' % (device, user))
             conn.login(self.Account(user, password))
 
             for command in cmdlist:
-                self.logger.debug('trying to execute command %s' % command)
+                self.logger.info('fn=sshcmd/run_by_ssh : %s : executing command <%s>' % (device, command))
                 conn.execute(command)
                 output_global = output_global + conn.response
                 output_indexed.append({command: conn.response})
 
         except Exception, e:
-            self.logger.warn('failure : output_indexed is %s, output_global=%s' % (output_indexed, output_global))
+            self.logger.warn('fn=sshcmd/run_by_ssh : %s : failure : output_indexed is %s, output_global=%s' % (device, output_indexed, output_global))
             return (1, e, output_indexed)
 
         # sometimes sending "exit" produce a close before we can explicitely do it ourselves
@@ -112,5 +112,5 @@ class SshCmd():
         conn.send('exit')
         conn.close()
 
-        self.logger.debug('success : output_indexed is %s' % output_indexed)
+        self.logger.info('fn=sshcmd/run_by_ssh : %s : success : output_indexed is %s' % (device, output_indexed))
         return (0, output_global, output_indexed)
