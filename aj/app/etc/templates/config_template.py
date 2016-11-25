@@ -23,7 +23,7 @@ class Config(object):
     MANDATE_UUID = True
 
     # how we do log. This would be a rotation of 10 files of 1 Mb in size
-    LOG_MAX_SIZE = 1000000
+    LOG_MAX_SIZE = 100000000
     LOG_BACKUP_COUNT = 10
 
     # how long we should wait for a device config-save operation
