@@ -1,6 +1,11 @@
 Release notes
 =============
 
+FIXME
+-----
+
+- better detection and logging of unsupported Entity MIB
+
 25.11.2016
 ----------
 

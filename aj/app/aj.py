@@ -208,14 +208,15 @@ class DeviceAPI(Resource):
 
             logger.debug('fn=DeviceAPI/get : %s : get serial numbers' % devicename)
             (deviceinfo['cswMaxSwitchNum'], deviceinfo['entities']) = self.get_serial(m, devicename)
+            logger.trace('fn=DeviceAPI/get : %s : back from get_serial' % devicename)
 
             # sysoid mapping
+            logger.trace('fn=DeviceAPI/get : %s : translate_sysoid %s' % (devicename, deviceinfo['sysObjectID']))
             (deviceinfo['hwVendor'], deviceinfo['hwModel']) = sysoidmap.translate_sysoid(deviceinfo['sysObjectID'])
 
         except Exception, e:
             logger.error(
-                "fn=DeviceAPI/get : %s : SNMP get of generic aspects for device failed : %s" % (devicename,
-                                                                            e))
+                "fn=DeviceAPI/get : %s : SNMP get of generic aspects for device failed : %s" % (devicename, e))
             return errst.status('ERROR_OP', 'SNMP get of generic aspects failed on %s, cause : %s' % (devicename, e)), 200
 
         try:
@@ -235,7 +236,6 @@ class DeviceAPI(Resource):
             # POE is not that important, do not generate errors for it
             logger.info(
                 "fn=DeviceAPI/get : %s : SNMP get for POE aspects for device failed : %s" % (devicename, e))
-            # return errst.status('ERROR_OP', 'SNMP get for POE aspects failed on %s, cause : %s' % (devicename, e)), 200
 
         tend = datetime.now()
         tdiff = tend - tstart
@@ -268,9 +268,14 @@ class DeviceAPI(Resource):
                 counter += 1
         except snmp.SNMPException, e:
             logger.info(
-                "fn=DeviceAPI/get_serial : %s : exception in get_serial/get-cswSwitchNumCurrent : <%s>" % (
+                "fn=DeviceAPI/get_serial : %s : SNMPException in get_serial/get-cswSwitchNumCurrent : <%s>" % (
+                devicename, e))
+        except Exception, e:
+            logger.info(
+                "fn=DeviceAPI/get_serial : %s : Exception in get_serial/get-cswSwitchNumCurrent : <%s>" % (
                 devicename, e))
 
+        logger.debug("fn=DeviceAPI/get_serial : %s : walk entPhysicalClass" % devicename)
         # see OBJECT entPhysicalClass in ENTITY-MIB.my
         interesting_classes = [3, 6, 9, 11]    # chassis, psu, module, stack
         # to reformat the class for humans
@@ -291,17 +296,20 @@ class DeviceAPI(Resource):
                     })
         except snmp.SNMPException, e:
             logger.info(
-                "fn=DeviceAPI/get_serial : %s : exception in get_serial/get-entPhysicalContainedIn : <%s>" % (
+                "fn=DeviceAPI/get_serial : %s : SNMPException in get_serial/get-entPhysicalClass : <%s>" % (
+                devicename, e))
+        except Exception, e:
+            logger.info(
+                "fn=DeviceAPI/get_serial : %s : Exception in get_serial/get-entPhysicalClass : <%s>" % (
                 devicename, e))
 
         # found something ?
         if len(hardware_info) == 0:
-            logger.warn(
-                "fn=DeviceAPI/get_serial : %s : could not get an entity parent" % devicename)
+            logger.warn("fn=DeviceAPI/get_serial : %s : could not get an entity parent" % devicename)
         else:
-            logger.debug("fn=DeviceAPI/get_serial : %s : got %s serial(s)" % (
-            devicename, len(hardware_info)))
+            logger.debug("fn=DeviceAPI/get_serial : %s : got %s serial(s)" % (devicename, len(hardware_info)))
 
+        logger.debug("fn=DeviceAPI/get_serial : %s : returning counter %s, hardware_info %s)" % (devicename, len(hardware_info), hardware_info))
         return (counter, hardware_info)
 
 
