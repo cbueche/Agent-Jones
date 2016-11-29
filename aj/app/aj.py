@@ -59,6 +59,7 @@ import error_handling
 import sysoidan
 import entity_vendortype
 import sshcmd
+import snmpmgr
 
 # Snimpy SNMP lib and MIB loading
 from snimpy.manager import Manager as M
@@ -173,23 +174,13 @@ class DeviceAPI(Resource):
         deviceinfo = autovivification.AutoVivification()
         deviceinfo['name'] = devicename
 
-        logger.debug(
-            'fn=DeviceAPI/get : %s : creating the snimpy manager' % devicename)
-        ro_community = credmgr.get_credentials(devicename)['ro_community']
-        if not check.check_snmp(M, devicename, ro_community, 'RO'):
+        logger.debug('fn=DeviceAPI/get : %s : requesting a SNMP manager' % (devicename))
+        m = snimpy.create(devicename=devicename, bulk=False)
+
+        if not check.check_snmp(m, devicename, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
-        logger.debug('fn=DeviceAPI/get : %s : request device info' %
-                     devicename)
-        m = M(host=devicename,
-              community=ro_community,
-              version=2,
-              timeout=app.config['SNMP_TIMEOUT'],
-              retries=app.config['SNMP_RETRIES'],
-              cache=app.config['SNMP_CACHE'],
-              bulk=False,
-              none=True)
-
+        logger.debug('fn=DeviceAPI/get : %s : request device info' % devicename)
         # generic SNMP stuff
         try:
 
@@ -309,7 +300,7 @@ class DeviceAPI(Resource):
         else:
             logger.debug("fn=DeviceAPI/get_serial : %s : got %s serial(s)" % (devicename, len(hardware_info)))
 
-        logger.debug("fn=DeviceAPI/get_serial : %s : returning counter %s, hardware_info %s)" % (devicename, len(hardware_info), hardware_info))
+        logger.trace("fn=DeviceAPI/get_serial : %s : returning counter=%s, hardware_info=%s)" % (devicename, len(hardware_info), hardware_info))
         return (counter, hardware_info)
 
 
@@ -425,20 +416,11 @@ class DeviceSaveAPI(Resource):
 
         tstart = datetime.now()
 
-        rw_community = credmgr.get_credentials(devicename)['rw_community']
+        logger.debug('fn=DeviceSaveAPI/put : %s : requesting a SNMP manager' % (devicename))
+        m = snimpy.create(devicename=devicename, cache=0, rw=True)
 
-        if not check.check_snmp(M, devicename, rw_community, 'RW'):
+        if not check.check_snmp(m, devicename, 'RW'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
-
-        logger.debug(
-            'fn=DeviceSaveAPI/get : %s : creating the snimpy manager' % devicename)
-        m = M(host=devicename,
-              community=rw_community,
-              version=2,
-              timeout=app.config['SNMP_TIMEOUT'],
-              retries=app.config['SNMP_RETRIES'],
-              cache=app.config['SNMP_CACHE'],
-              none=True)
 
         # random operation index
         opidx = randint(1, 1000)
@@ -564,24 +546,14 @@ class InterfaceAPI(Resource):
         logger.info('fn=InterfaceAPI/get : %s : showmac=%s, showvlannames=%s, showpoe=%s, showcdp=%s, showdhcp=%s, showtrunks=%s' %
                     (devicename, showmac, showvlannames, showpoe, showcdp, showdhcp, showtrunks))
 
-        ro_community = credmgr.get_credentials(devicename)['ro_community']
-        if not check.check_snmp(M, devicename, ro_community, 'RO'):
+        logger.debug('fn=InterfaceAPI/get : %s : requesting a SNMP manager' % (devicename))
+        m = snimpy.create(devicename=devicename)
+
+        if not check.check_snmp(m, devicename, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         deviceinfo = autovivification.AutoVivification()
         deviceinfo['name'] = devicename
-
-        logger.debug('fn=InterfaceAPI/get : %s : creating the snimpy manager' % devicename)
-        # FIXME : the timeout here is probably a bad idea. The sum of apps is likely to fail
-        # not specifying "bulk=N" is activating it
-        m = M(host=devicename,
-              community=ro_community,
-              version=2,
-              timeout=app.config['SNMP_TIMEOUT'],
-              retries=app.config['SNMP_RETRIES'],
-              cache=app.config['SNMP_CACHE'],
-              none=True)
-
         deviceinfo['sysName'] = m.sysName
 
         # collect the mapping between interfaces and entities
@@ -594,20 +566,20 @@ class InterfaceAPI(Resource):
         # get the mac list
         if showmac:
             macAPI = MacAPI()
-            macs, total_mac_entries = macAPI.get_macs_from_device(devicename, m, ro_community)
+            macs, total_mac_entries = macAPI.get_macs_from_device(devicename, m)
 
         # collect the voice vlans
         if showvlannames:
             vlanAPI = vlanlistAPI()
-            voice_vlans = vlanAPI.get_voice_vlans(devicename, m, ro_community)
-            data_vlans = vlanAPI.get_vlans(devicename, m, ro_community)
+            voice_vlans = vlanAPI.get_voice_vlans(devicename, m)
+            data_vlans = vlanAPI.get_vlans(devicename, m)
 
         if showpoe:
             poe = self.get_poe(devicename, m)
 
         if showcdp:
             cdpAPI = CDPAPI()
-            cdps = cdpAPI.get_cdp_from_device(devicename, m, ro_community)
+            cdps = cdpAPI.get_cdp_from_device(devicename, m)
 
         if showdhcp:
             dhcpAPI = DHCPsnoopAPI()
@@ -615,7 +587,7 @@ class InterfaceAPI(Resource):
 
         if showtrunks:
             trunkAPI = TrunkAPI()
-            trunks_entries = trunkAPI.get_trunks_from_device(devicename, m, ro_community)
+            trunks_entries = trunkAPI.get_trunks_from_device(devicename, m)
 
         # here, we collect all properties ("columns" in Snimpy speak) from the ifTable & ifXTable
         # we do this with single iteritems() loops, as they use Bulk-Get, which is much faster
@@ -1077,23 +1049,14 @@ class InterfaceCounterAPI(Resource):
 
         tstart = datetime.now()
 
-        ro_community = credmgr.get_credentials(devicename)['ro_community']
-        if not check.check_snmp(M, devicename, ro_community, 'RO'):
+        logger.debug('fn=InterfaceCounterAPI/get : %s : requesting a SNMP manager' % (devicename))
+        m = snimpy.create(devicename=devicename, cache=False)
+
+        if not check.check_snmp(m, devicename, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         deviceinfo = autovivification.AutoVivification()
         deviceinfo['name'] = devicename
-
-        logger.debug(
-            'fn=InterfaceCounterAPI/get : %s : creating the snimpy manager' % devicename)
-        # using no cache here to allow for quick polling
-        m = M(host=devicename,
-              community=ro_community,
-              version=2,
-              timeout=app.config['SNMP_TIMEOUT'],
-              retries=app.config['SNMP_RETRIES'],
-              cache=False,
-              none=True)
 
         # all SNMP gets under one big try
         try:
@@ -1154,27 +1117,19 @@ class MacAPI(Resource):
 
         tstart = datetime.now()
 
-        ro_community = credmgr.get_credentials(devicename)['ro_community']
-        if not check.check_snmp(M, devicename, ro_community, 'RO'):
+        logger.debug('fn=MacAPI/get : %s : requesting a SNMP manager' % (devicename))
+        m = snimpy.create(devicename=devicename)
+
+        if not check.check_snmp(m, devicename, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         deviceinfo = autovivification.AutoVivification()
         deviceinfo['name'] = devicename
 
-        logger.debug(
-            'fn=MacAPI/get : %s : creating the snimpy manager' % devicename)
-        m = M(host=devicename,
-              community=ro_community,
-              version=2,
-              timeout=app.config['SNMP_TIMEOUT'],
-              retries=app.config['SNMP_RETRIES'],
-              cache=app.config['SNMP_CACHE'],
-              none=True)
-
         try:
             deviceinfo['sysName'] = m.sysName
 
-            macs, total_mac_entries = self.get_macs_from_device(devicename, m, ro_community)
+            macs, total_mac_entries = self.get_macs_from_device(devicename, m)
 
             macs_organized = []
             for ifindex in macs:
@@ -1202,9 +1157,8 @@ class MacAPI(Resource):
 
 
     # we create a dict indexed by ifIndex,
-    # it's then easier when having to enrich an interface info when knowing
-    # the ifIndex
-    def get_macs_from_device(self, devicename, m, ro_community):
+    # it's then easier when having to enrich an interface info when knowing the ifIndex
+    def get_macs_from_device(self, devicename, m):
         # see http://www.cisco.com/c/en/us/support/docs/ip/simple-network-management-protocol-snmp/44800-mactoport44800.html
 
         logger.debug('fn=MacAPI/get_macs_from_device : %s : get vlan list' % devicename)
@@ -1244,15 +1198,8 @@ class MacAPI(Resource):
                 # VLAN-based community, have a local manager for each VLAN
                 # this works probably only for Cisco, where it is called "community string indexing"
                 # http://www.cisco.com/c/en/us/support/docs/ip/simple-network-management-protocol-snmp/40367-camsnmp40367.html
-                vlan_community = "%s@%s" % (ro_community, vlan_nr)
-                # can be slow for big switches, so try only once but longer
-                lm = M(host=devicename,
-                       community=vlan_community,
-                       version=2,
-                       timeout=app.config['SNMP_TIMEOUT_LONG'],
-                       retries=app.config['SNMP_RETRIES_NONE'],
-                       cache=app.config['SNMP_CACHE'],
-                       none=True)
+                logger.debug('fn=MacAPI/get_macs_from_device : %s : requesting a SNMP manager' % (devicename))
+                lm = snimpy.create(devicename=devicename, community_format='{}@%s' % vlan_nr)
 
                 # we pull them in an large block so we can catch timeouts for broken IOS versions
                 # happened on a big stack of 8 Cisco 3750 running 12.2(46)SE (fc2)
@@ -1338,26 +1285,19 @@ class CDPAPI(Resource):
 
         tstart = datetime.now()
 
-        ro_community = credmgr.get_credentials(devicename)['ro_community']
-        if not check.check_snmp(M, devicename, ro_community, 'RO'):
+        logger.debug('fn=CDPAPI/get : %s : requesting a SNMP manager' % (devicename))
+        m = snimpy.create(devicename=devicename)
+
+        if not check.check_snmp(m, devicename, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         deviceinfo = autovivification.AutoVivification()
         deviceinfo['name'] = devicename
 
-        logger.debug('fn=CDPAPI/get : %s : creating the snimpy manager' % devicename)
-        m = M(host=devicename,
-              community=ro_community,
-              version=2,
-              timeout=app.config['SNMP_TIMEOUT'],
-              retries=app.config['SNMP_RETRIES'],
-              cache=app.config['SNMP_CACHE'],
-              none=True)
-
         try:
             deviceinfo['sysName'] = m.sysName
 
-            cdps = self.get_cdp_from_device(devicename, m, ro_community)
+            cdps = self.get_cdp_from_device(devicename, m)
 
             cdps_organized = []
             for ifindex in cdps:
@@ -1395,7 +1335,7 @@ class CDPAPI(Resource):
 
     # we create a dict indexed by ifIndex,
     # it's then easier when having to enrich an interface info when knowing the ifIndex
-    def get_cdp_from_device(self, devicename, m, ro_community):
+    def get_cdp_from_device(self, devicename, m):
         logger.debug('fn=CDPAPI/get_cdp_from_device : %s' % devicename)
 
         cdps = autovivification.AutoVivification()
@@ -1462,27 +1402,19 @@ class TrunkAPI(Resource):
 
         tstart = datetime.now()
 
-        ro_community = credmgr.get_credentials(devicename)['ro_community']
-        if not check.check_snmp(M, devicename, ro_community, 'RO'):
+        logger.debug('fn=TrunkAPI/get : %s : requesting a SNMP manager' % (devicename))
+        m = snimpy.create(devicename=devicename)
+
+        if not check.check_snmp(m, devicename, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         deviceinfo = autovivification.AutoVivification()
         deviceinfo['name'] = devicename
 
-        logger.debug(
-            'fn=TrunkAPI/get : %s : creating the snimpy manager' % devicename)
-        m = M(host=devicename,
-              community=ro_community,
-              version=2,
-              timeout=app.config['SNMP_TIMEOUT'],
-              retries=app.config['SNMP_RETRIES'],
-              cache=app.config['SNMP_CACHE'],
-              none=True)
-
         try:
             deviceinfo['sysName'] = m.sysName
 
-            trunks = self.get_trunks_from_device(devicename, m, ro_community)
+            trunks = self.get_trunks_from_device(devicename, m)
 
         except snmp.SNMPException, e:
             logger.error("fn=TrunkAPI/get : %s : SNMP get failed : %s" %
@@ -1501,7 +1433,7 @@ class TrunkAPI(Resource):
 
     # we create a dict indexed by ifIndex,
     # it's then easier when having to enrich an interface info
-    def get_trunks_from_device(self, devicename, m, ro_community):
+    def get_trunks_from_device(self, devicename, m):
 
         logger.debug('fn=TrunkAPI/get_trunks_from_device : %s' % devicename)
 
@@ -1543,26 +1475,18 @@ class ARPAPI(Resource):
 
         tstart = datetime.now()
 
-        ro_community = credmgr.get_credentials(devicename)['ro_community']
-        if not check.check_snmp(M, devicename, ro_community, 'RO'):
+        logger.debug('fn=ARPAPI/get : %s : requesting a SNMP manager' % (devicename))
+        m = snimpy.create(devicename=devicename)
+
+        if not check.check_snmp(m, devicename, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         deviceinfo = autovivification.AutoVivification()
         deviceinfo['name'] = devicename
 
-        logger.debug('fn=ARPAPI/get : %s : creating the snimpy manager' % devicename)
-        m = M(host=devicename,
-              community=ro_community,
-              version=2,
-              timeout=app.config['SNMP_TIMEOUT'],
-              retries=app.config['SNMP_RETRIES'],
-              cache=app.config['SNMP_CACHE'],
-              bulk=True,
-              none=True)
-
         try:
             deviceinfo['sysName'] = m.sysName
-            oid_used, nbr_arp_entries, arps = self.get_arp_from_device(devicename, m, ro_community)
+            oid_used, nbr_arp_entries, arps = self.get_arp_from_device(devicename, m)
 
         except snmp.SNMPException, e:
             logger.error("fn=ARPAPI/get : %s : SNMP get failed : %s" % (devicename, e))
@@ -1581,7 +1505,7 @@ class ARPAPI(Resource):
         return deviceinfo
 
     # the real collection stuff
-    def get_arp_from_device(self, devicename, m, ro_community):
+    def get_arp_from_device(self, devicename, m):
 
         nbr_of_entries = 0
         logger.debug('fn=ARPAPI/get_arp_from_device : %s : trying current OID' % devicename)
@@ -1662,22 +1586,14 @@ class DHCPsnoopAPI(Resource):
 
         tstart = datetime.now()
 
-        ro_community = credmgr.get_credentials(devicename)['ro_community']
-        if not check.check_snmp(M, devicename, ro_community, 'RO'):
+        logger.debug('fn=DHCPsnoopAPI/get : %s : requesting a SNMP manager' % (devicename))
+        m = snimpy.create(devicename=devicename)
+
+        if not check.check_snmp(m, devicename, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         deviceinfo = autovivification.AutoVivification()
         deviceinfo['name'] = devicename
-
-        logger.debug(
-            'fn=DHCPsnoopAPI/get : %s : creating the snimpy manager' % devicename)
-        m = M(host=devicename,
-              community=ro_community,
-              version=2,
-              timeout=app.config['SNMP_TIMEOUT'],
-              retries=app.config['SNMP_RETRIES'],
-              cache=app.config['SNMP_CACHE'],
-              none=True)
 
         try:
             deviceinfo['sysName'] = m.sysName
@@ -1815,22 +1731,14 @@ class vlanlistAPI(Resource):
 
         tstart = datetime.now()
 
-        ro_community = credmgr.get_credentials(devicename)['ro_community']
-        if not check.check_snmp(M, devicename, ro_community, 'RO'):
+        logger.debug('fn=vlanlistAPI/get : %s : requesting a SNMP manager' % (devicename))
+        m = snimpy.create(devicename=devicename)
+
+        if not check.check_snmp(m, devicename, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         deviceinfo = autovivification.AutoVivification()
         deviceinfo['name'] = devicename
-
-        logger.debug(
-            'fn=vlanlistAPI/get : %s : creating the snimpy manager' % devicename)
-        m = M(host=devicename,
-              community=ro_community,
-              version=2,
-              timeout=app.config['SNMP_TIMEOUT'],
-              retries=app.config['SNMP_RETRIES'],
-              cache=app.config['SNMP_CACHE'],
-              none=True)
 
         # all SNMP gets under one big try
         try:
@@ -1839,7 +1747,7 @@ class vlanlistAPI(Resource):
 
             logger.debug('fn=vlanlistAPI/get : %s : get data vlan list' %
                          devicename)
-            vlans_lookup_table = self.get_vlans(devicename, m, ro_community)
+            vlans_lookup_table = self.get_vlans(devicename, m)
 
             vlans = []
             for entry in vlans_lookup_table:
@@ -1866,7 +1774,7 @@ class vlanlistAPI(Resource):
                     (devicename, deviceinfo['query-duration']))
         return deviceinfo
 
-    def get_vlans(self, devicename, m, ro_community):
+    def get_vlans(self, devicename, m):
         ''' return a VLAN dict indexed by vlan-nr '''
 
         logger.debug('fn=vlanlistAPI/get_vlans : %s : get data vlan list' % devicename)
@@ -1888,7 +1796,7 @@ class vlanlistAPI(Resource):
         return vlans
 
 
-    def get_voice_vlans(self, devicename, m, ro_community):
+    def get_voice_vlans(self, devicename, m):
         ''' return a VOICE_VLAN dict indexed by vlan-nr '''
 
         logger.debug('fn=vlanlistAPI/get_voice_vlans : %s : get voice vlan list' % devicename)
@@ -1942,19 +1850,11 @@ class PortToVlanAPI(Resource):
 
         tstart = datetime.now()
 
-        rw_community = credmgr.get_credentials(devicename)['rw_community']
-        if not check.check_snmp(M, devicename, rw_community, 'RW'):
-            return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
+        logger.debug('fn=PortToVlanAPI/put : %s : requesting a SNMP manager' % (devicename))
+        m = snimpy.create(devicename=devicename, rw=True)
 
-        logger.debug(
-            'fn=PortToVlanAPI/get : %s : creating the snimpy manager' % devicename)
-        m = M(host=devicename,
-              community=rw_community,
-              version=2,
-              timeout=app.config['SNMP_TIMEOUT'],
-              retries=app.config['SNMP_RETRIES'],
-              cache=app.config['SNMP_CACHE'],
-              none=True)
+        if not check.check_snmp(m, devicename, 'RW'):
+            return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         # all SNMP ops under one big try
         try:
@@ -2019,19 +1919,11 @@ class InterfaceConfigAPI(Resource):
 
         tstart = datetime.now()
 
-        rw_community = credmgr.get_credentials(devicename)['rw_community']
-        if not check.check_snmp(M, devicename, rw_community, 'RW'):
-            return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
+        logger.debug('fn=InterfaceConfigAPI/put : %s : requesting a SNMP manager' % (devicename))
+        m = snimpy.create(devicename=devicename, rw=True)
 
-        logger.debug(
-            'fn=InterfaceConfigAPI/put : %s : creating the snimpy manager' % devicename)
-        m = M(host=devicename,
-              community=rw_community,
-              version=2,
-              timeout=app.config['SNMP_TIMEOUT'],
-              retries=app.config['SNMP_RETRIES'],
-              cache=app.config['SNMP_CACHE'],
-              none=True)
+        if not check.check_snmp(m, devicename, 'RW'):
+            return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
 
         try:
             # assign the values to the port
@@ -2061,7 +1953,6 @@ class InterfaceConfigAPI(Resource):
 # -----------------------------------------------------------------------------------
 # SNMP get or walk on a OID
 # this goes a bit beside the idea of this web-service, but it brings flexibility
-# FIXME: walk provide too much info if eg done on a single get instance like 1.3.6.1.2.1.1.3.0
 # -----------------------------------------------------------------------------------
 class OIDpumpAPI(Resource):
     __doc__ = '''{
@@ -2081,40 +1972,40 @@ class OIDpumpAPI(Resource):
 
         tstart = datetime.now()
 
-        ro_community = credmgr.get_credentials(devicename)['ro_community']
-        if not check.check_snmp(M, devicename, ro_community, 'RO'):
+        # it's a bit overkill to create a manager and only use the underlying session
+        # but it keeps the code tidy and orthogonal. Besides, it will work for SNMPv3 as well.
+        logger.debug('fn=OIDpumpAPI/get : %s : requesting a SNMP manager' % (devicename))
+        m = snimpy.create(devicename=devicename, bulk=False, cache=0)
+        if not check.check_snmp(m, devicename, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
+        session = m._session._session
 
         deviceinfo = autovivification.AutoVivification()
         deviceinfo['name'] = devicename
 
-        logger.debug(
-            'fn=OIDpumpAPI/get : %s : creating the SNMP session' % devicename)
-        session = snmp.Session(devicename, community=ro_community, version=2)
-
         if pdu == 'get':
             try:
+                logger.debug('fn=OIDpumpAPI/get : %s : SNMP get on %s' % (devicename, oid))
                 data = session.get(str(oid))
             except Exception, e:
-                logger.error(
-                    "fn=OIDpumpAPI/get : %s : oid get failed: %s" % (devicename, e))
+                logger.error("fn=OIDpumpAPI/get : %s : oid get failed: %s" % (devicename, e))
                 return errst.status('ERROR_SNMP_OP', 'oid get failed: %s' % e), 200
 
         elif pdu == 'walk':
             try:
-                data = session.walk(str(oid))
+                logger.debug('fn=OIDpumpAPI/get : %s : SNMP walk on %s' % (devicename, oid))
+                data = session.walkmore(str(oid))
             except Exception, e:
-                logger.error(
-                    "fn=OIDpumpAPI/get : %s : oid walk failed: %s" % (devicename, e))
+                logger.error("fn=OIDpumpAPI/get : %s : oid walk failed: %s" % (devicename, e))
                 return errst.status('ERROR_SNMP_OP', 'oid walk failed: %s' % e), 200
 
         else:
             return errst.status('ERROR_SNMP_PDU', 'unknown PDU value : %s' % pdu), 200
 
-        # try to unpack the Python tuples. Not sure it will work with all sorts
-        # of get/walk results
+        # try to unpack the Python tuples. Not sure it will work with all sorts of get/walk results
         entries = {}
         for entry in data:
+            logger.trace('entry=<%s>' % str(entry))
             oid = '.'.join(map(str, entry[0]))
             if type(entry[1]) == tuple:
                 value = '.'.join(map(str, entry[1]))
@@ -2123,6 +2014,7 @@ class OIDpumpAPI(Resource):
             entries[oid] = value
 
         deviceinfo['data'] = entries
+        deviceinfo['entries'] = len(entries)
 
         tend = datetime.now()
         tdiff = tend - tstart
@@ -2130,8 +2022,7 @@ class OIDpumpAPI(Resource):
                                           tdiff.days * 24 * 3600) * 10**6) / 1000
         deviceinfo['query-duration'] = duration
 
-        logger.info('fn=OIDpumpAPI/get : %s : duration=%s' %
-                    (devicename, deviceinfo['query-duration']))
+        logger.info('fn=OIDpumpAPI/get : %s : duration=%s' % (devicename, deviceinfo['query-duration']))
         return deviceinfo
 
 
@@ -2427,6 +2318,9 @@ entityvendortypeoidmap = entity_vendortype.EntityVendorType(logger)
 
 # for SSH commands
 commander = sshcmd.SshCmd(logger)
+
+# for SNMP traffic
+snimpy = snmpmgr.SNMPmgr(logger, app, credmgr)
 
 
 # -----------------------------------------------------------------------------------
