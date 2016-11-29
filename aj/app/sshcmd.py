@@ -38,7 +38,7 @@ class SshCmd():
     def __init__(self, logger):
 
         self.logger = logging.getLogger('aj.sshcmd')
-        self.logger.info('creating an instance of sshcmd')
+        self.logger.info('SshCmd/init: creating an instance of sshcmd')
 
 
     def run_by_ssh(self, device, user, password, driver, cmdlist):

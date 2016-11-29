@@ -46,7 +46,7 @@ class EntityVendorType():
 		this is currently only implement for Cisco, but other vendors might be added
 		'''
 
-		self.logger.debug('fn=EntityVendorType/translate_oid : got oid = %s' % oid)
+		self.logger.trace('fn=EntityVendorType/translate_oid : got oid = %s' % oid)
 
 		regex = self.re.compile(r'^1\.3\.6\.1\.4\.1\.9\.12\.3\.1')
 		match = regex.search(oid)
@@ -58,5 +58,5 @@ class EntityVendorType():
 		# either we find a mapping or we fallback to the oid
 		model = self.entityproduct.get(oid, oid)
 
-		self.logger.debug('fn=EntityVendorType/translate_oid : model = %s' % (model))
+		self.logger.trace('fn=EntityVendorType/translate_oid : model = %s' % (model))
 		return model

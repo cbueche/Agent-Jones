@@ -1,6 +1,14 @@
 Release notes
 =============
 
+FIXME
+-----
+
+- better detection and logging of unsupported Entity MIB
+- SNMPv1 support
+- SNMPv3 support (without SNMP contexts)
+- fix SNMP-GET and WALK call
+
 25.11.2016
 ----------
 
