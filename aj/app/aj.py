@@ -1974,6 +1974,8 @@ class OIDpumpAPI(Resource):
 
         # it's a bit overkill to create a manager and only use the underlying session
         # but it keeps the code tidy and orthogonal. Besides, it will work for SNMPv3 as well.
+        # recommended method by the developer of snimpy.
+        # https://github.com/vincentbernat/snimpy/issues/62
         logger.debug('fn=OIDpumpAPI/get : %s : requesting a SNMP manager' % (devicename))
         m = snimpy.create(devicename=devicename, bulk=False, cache=0)
         if not check.check_snmp(m, devicename, 'RO'):
