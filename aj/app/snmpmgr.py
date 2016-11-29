@@ -20,9 +20,6 @@ class SNMPmgr():
 	'''
 
 	def __init__(self, logger, app, credmgr):
-		'''
-		construct enterprise table
-		'''
 
 		self.logger = logging.getLogger('aj.snmpmgr')
 		self.logger.info('fn=SNMPmgr/init : creating an instance of snmpmgr')
@@ -38,7 +35,34 @@ class SNMPmgr():
 	           none=True,
 	           rw=False,
 	           community_format='{}'):
+		"""Create a new SNMP manager.
 
+			:param devicename: The hostname or IP address of the agent to
+				connect to. Optionally, the port can be specified
+				separated with a double colon.
+			:type host: str
+			:param timeout: Use the specified value in seconds as timeout.
+			:type timeout: int
+			:param retries: How many times the request should be retried?
+			:type retries: int
+			:param cache: Should caching be enabled? This can be either a
+				boolean or an integer to specify the cache timeout in
+				seconds. If `True`, the default timeout is 5 seconds.
+			:type cache: bool or int
+			:param bulk: Max-repetition to use to speed up MIB walking
+				with `GETBULK`. Set to `0` to disable.
+			:type bulk: int
+			:param none: Should `None` be returned when the agent does not
+				know the requested OID? If `True`, `None` will be returned
+				when requesting an inexisting scalar or column.
+			:type none: bool
+			:param rw: if True, use the SNMPv2 write community instead of the
+				read-only community.
+			:type rw : bool
+			:param community_format : string to use to format the community string
+				used mainly for Cisco VLAN-based communities.
+			:type host: str
+			"""
 		self.logger.debug('fn=SNMPmgr/create : %s : creating the snimpy manager' % (devicename))
 
 		if timeout is None:
@@ -57,7 +81,9 @@ class SNMPmgr():
 		else:
 			community = credentials['ro_community']
 
-		self.logger.debug('fn=SNMPmgr/create : %s : parameters : version=%s, timeout=%s, retries=%s, cache=%s, bulk=%s, none=%s, read-write=%s, community_format=%s' % (devicename, credentials['snmp_version'], timeout, retries, cache, bulk, none, rw, community_format))
+		self.logger.debug(
+			'fn=SNMPmgr/create : %s : parameters : version=%s, timeout=%s, retries=%s, cache=%s, bulk=%s, none=%s, read-write=%s, community_format=%s' % (
+				devicename, credentials['snmp_version'], timeout, retries, cache, bulk, none, rw, community_format))
 
 		# the community might be adjusted using the format if it is defined.
 		# mostly used for VLAN-based communities
