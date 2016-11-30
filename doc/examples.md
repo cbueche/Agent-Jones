@@ -14,6 +14,12 @@ Adapt and set these shell variables to get the examples below running.
     export AJ_USER=username
     export AJ_PASSWORD=password
 
+## Special ports for SNMP
+
+In case the SNMP agent runs on a custom port, it can be specified as `:portnr` prefix to the devicename.
+
+    export DEVICE=example.device.domain.com:10161
+
 ## Looking at the API documentation
 
 Point your browser to $AJ_URL/xdoc/
