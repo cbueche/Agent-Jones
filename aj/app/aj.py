@@ -17,7 +17,7 @@ Repository & documentation : https://github.com/cbueche/Agent-Jones
 # -----------------------------------------------------------------------------------
 
 # update doc/RELEASES.md when touching this
-__version__ = '25.11.2016'
+__version__ = '30.11.2016'
 
 from flask import Flask, url_for, make_response, jsonify, send_from_directory, request
 from flask import render_template
@@ -168,6 +168,8 @@ class DeviceAPI(Resource):
     def get(self, devicename):
 
         logger.debug('fn=DeviceAPI/get : src=%s, device=%s' % (request.remote_addr, devicename))
+        logaction(classname='DeviceAPI', methodname='get', devicename=devicename,
+                  src_ip=request.remote_addr, src_user=auth.username())
 
         tstart = datetime.now()
 
@@ -313,15 +315,16 @@ class DeviceActionAPI(Resource):
         "description": "POST action to a single device. Only possible action for now is ping",
         "auth": true,
         "auth-type": "BasicAuth",
-        "params": ["type=ping"],
+        "params": ["type=ping", "clientinfo=JoBar"],
         "returns": "Results of the action."
     }'''
 
     # check argument
     def __init__(self):
         self.reqparse = reqparse.RequestParser()
-        self.reqparse.add_argument(
-            'type', type=str, required=True, help='No action provided')
+        self.reqparse.add_argument('type', type=str, required=True, help='No action provided')
+        self.reqparse.add_argument('clientinfo', type=str, required=False,
+                                   help='Passed by the client to log the upstream user information, e.g. its username.')
         super(DeviceActionAPI, self).__init__()
 
     decorators = [auth.login_required]
@@ -333,6 +336,8 @@ class DeviceActionAPI(Resource):
 
         logger.debug('fn=DeviceActionAPI/post : src=%s, %s / %s' %
                      (request.remote_addr, devicename, action))
+        logaction(classname='DeviceActionAPI', methodname='post', devicename=devicename, params=args,
+                  mode='rw', src_ip=request.remote_addr, src_user=auth.username())
 
         tstart = datetime.now()
 
@@ -393,7 +398,7 @@ class DeviceSaveAPI(Resource):
         "description": "save the running-config to startup-config",
         "auth": true,
         "auth-type": "BasicAuth",
-        "params": ["uuid=UUID (optional, used to identify the write request in logs)"],
+        "params": ["uuid=UUID (optional, used to identify the write request in logs)", "clientinfo=JoBar"],
         "returns": "status info"
     }
     '''
@@ -402,8 +407,9 @@ class DeviceSaveAPI(Resource):
     # check argument
     def __init__(self):
         self.reqparse = reqparse.RequestParser()
-        self.reqparse.add_argument(
-            'uuid', type=str, required=mandate_uuid, help='No uuid provided')
+        self.reqparse.add_argument('uuid', type=str, required=mandate_uuid, help='No uuid provided')
+        self.reqparse.add_argument('clientinfo', type=str, required=False,
+                                   help='Passed by the client to log the upstream user information, e.g. its username.')
         super(DeviceSaveAPI, self).__init__()
 
     def put(self, devicename):
@@ -413,6 +419,8 @@ class DeviceSaveAPI(Resource):
 
         logger.info('fn=DeviceSaveAPI/put : src=%s, %s, uuid=%s' % (
             request.remote_addr, devicename, uuid))
+        logaction(classname='DeviceSaveAPI', methodname='put', devicename=devicename, params=args,
+                  mode='rw', src_ip=request.remote_addr, src_user=auth.username())
 
         tstart = datetime.now()
 
@@ -505,7 +513,7 @@ class InterfaceAPI(Resource):
         "description": "GET interfaces from a device. Adding ?showmac=1 to the URI will list the MAC addresses of devices connected to ports. Adding ?showvlannames=1 will show the vlan names for each vlan. Adding ?showpoe=1 will provide the power consumption for each port. Adding ?showcdp=1 will provide CDP information for each port. Adding ?showdhcp=1 will collect DHCP snooping information for each port. Adding showtrunks=1 will collect trunk attributes for each interfaces. All these options add significant time and overhead to the collection process.",
         "auth": true,
         "auth-type": "BasicAuth",
-        "params": [],
+        "params": ["clientinfo=JoBar"],
         "returns": "A list of device interfaces."
     }'''
     decorators = [auth.login_required]
@@ -515,8 +523,7 @@ class InterfaceAPI(Resource):
         self.reqparse = reqparse.RequestParser()
         self.reqparse.add_argument('showmac', default=0, type=int, required=False,
                                    help='showmac=0|1. List the MAC addresses of devices connected to ports.')
-        self.reqparse.add_argument('showvlannames', default=0, type=int,
-                                   required=False,
+        self.reqparse.add_argument('showvlannames', default=0, type=int, required=False,
                                    help='showvlannames=0|1. Show the vlan names for each vlan.')
         self.reqparse.add_argument('showpoe', default=0, type=int, required=False,
                                    help='showpoe=0|1. Provide the power consumption for each port.')
@@ -526,6 +533,8 @@ class InterfaceAPI(Resource):
                                    help='showdhcp=0|1. Provide the DHCP snooped information for each port.')
         self.reqparse.add_argument('showtrunks', default=0, type=int, required=False,
                                    help='showtrunks=0|1. Provide the trunk information for each port.')
+        self.reqparse.add_argument('clientinfo', type=str, required=False,
+                                   help='Passed by the client to log the upstream user information, e.g. its username.')
         super(InterfaceAPI, self).__init__()
 
     def get(self, devicename):
@@ -545,6 +554,8 @@ class InterfaceAPI(Resource):
         showtrunks = True if args['showtrunks'] else False
         logger.info('fn=InterfaceAPI/get : %s : showmac=%s, showvlannames=%s, showpoe=%s, showcdp=%s, showdhcp=%s, showtrunks=%s' %
                     (devicename, showmac, showvlannames, showpoe, showcdp, showdhcp, showtrunks))
+        logaction(classname='InterfaceAPI', methodname='get', devicename=devicename,
+                  params=args, src_ip=request.remote_addr, src_user=auth.username())
 
         logger.debug('fn=InterfaceAPI/get : %s : requesting a SNMP manager' % (devicename))
         m = snimpy.create(devicename=devicename)
@@ -1046,6 +1057,8 @@ class InterfaceCounterAPI(Resource):
 
         logger.debug('fn=InterfaceCounterAPI/get : src=%s, %s : index=%s' %
                      (request.remote_addr, devicename, ifindex))
+        logaction(classname='InterfaceCounterAPI', methodname='get', devicename=devicename,
+                  params=ifindex, src_ip=request.remote_addr, src_user=auth.username())
 
         tstart = datetime.now()
 
@@ -1114,6 +1127,8 @@ class MacAPI(Resource):
     def get(self, devicename):
         #-------------------------
         logger.debug('fn=MacAPI/get : src=%s, %s' % (request.remote_addr, devicename))
+        logaction(classname='MacAPI', methodname='get', devicename=devicename,
+                  src_ip=request.remote_addr, src_user=auth.username())
 
         tstart = datetime.now()
 
@@ -1282,6 +1297,8 @@ class CDPAPI(Resource):
 
     def get(self, devicename):
         logger.debug('fn=CDPAPI/get : src=%s, %s' % (request.remote_addr, devicename))
+        logaction(classname='CDPAPI', methodname='get', devicename=devicename,
+                  src_ip=request.remote_addr, src_user=auth.username())
 
         tstart = datetime.now()
 
@@ -1399,6 +1416,8 @@ class TrunkAPI(Resource):
     def get(self, devicename):
         #-------------------------
         logger.debug('fn=TrunkAPI/get : src=%s, %s' % (request.remote_addr, devicename))
+        logaction(classname='TrunkAPI', methodname='get', devicename=devicename,
+                  src_ip=request.remote_addr, src_user=auth.username())
 
         tstart = datetime.now()
 
@@ -1472,6 +1491,8 @@ class ARPAPI(Resource):
     def get(self, devicename):
         # -------------------------
         logger.debug('fn=ARPAPI/get : src=%s, %s' % (request.remote_addr, devicename))
+        logaction(classname='ARPAPI', methodname='get', devicename=devicename,
+                  src_ip=request.remote_addr, src_user=auth.username())
 
         tstart = datetime.now()
 
@@ -1583,6 +1604,8 @@ class DHCPsnoopAPI(Resource):
 
     def get(self, devicename):
         logger.debug('fn=DHCPsnoopAPI/get : src=%s, %s' % (request.remote_addr, devicename))
+        logaction(classname='DHCPsnoopAPI', methodname='get', devicename=devicename,
+                  src_ip=request.remote_addr, src_user=auth.username())
 
         tstart = datetime.now()
 
@@ -1728,6 +1751,8 @@ class vlanlistAPI(Resource):
     def get(self, devicename):
 
         logger.debug('fn=vlanlistAPI/get : src=%s, device=%s' % (request.remote_addr, devicename))
+        logaction(classname='vlanlistAPI', methodname='get', devicename=devicename,
+                  src_ip=request.remote_addr, src_user=auth.username())
 
         tstart = datetime.now()
 
@@ -1825,7 +1850,7 @@ class PortToVlanAPI(Resource):
         "description": "PUT on a vlan : assign the port to a VLAN",
         "auth": true,
         "auth-type": "BasicAuth",
-        "params": ["vlan=NNN", "uuid=UUID (optional, used to identify the write request in logs)"],
+        "params": ["vlan=NNN", "uuid=UUID (optional, used to identify the write request in logs)", "clientinfo=JoBar"],
         "returns": "status"
     }'''
     decorators = [auth.login_required]
@@ -1837,6 +1862,8 @@ class PortToVlanAPI(Resource):
             'vlan', type=str, required=True, help='No vlan number provided')
         self.reqparse.add_argument(
             'uuid', type=str, required=mandate_uuid, help='No uuid provided')
+        self.reqparse.add_argument('clientinfo', type=str, required=False,
+                                   help='Passed by the client to log the upstream user information, e.g. its username.')
         super(PortToVlanAPI, self).__init__()
 
     def put(self, devicename, ifindex):
@@ -1847,6 +1874,8 @@ class PortToVlanAPI(Resource):
 
         logger.info('fn=PortToVlanAPI/put : src=%s, %s : ifindex=%s, vlan=%s, uuid=%s' %
                     (request.remote_addr, devicename, ifindex, vlan, uuid))
+        logaction(classname='PortToVlanAPI', methodname='put', devicename=devicename,
+                  params=args, mode='rw', src_ip=request.remote_addr, src_user=auth.username())
 
         tstart = datetime.now()
 
@@ -1888,7 +1917,7 @@ class InterfaceConfigAPI(Resource):
         "description": "PUT on an interface : configure the interface",
         "auth": true,
         "auth-type": "BasicAuth",
-        "params": ["ifAlias=TXT", "ifAdminStatus={1(up)|2(down)}", "uuid=UUID (optional, used to identify the write request in logs)"],
+        "params": ["ifAlias=TXT", "ifAdminStatus={1(up)|2(down)}", "uuid=UUID (optional, used to identify the write request in logs)", "clientinfo=JoBar"],
         "returns": "status"
     }'''
     """ PUT on an interface : configure the interface """
@@ -1900,9 +1929,11 @@ class InterfaceConfigAPI(Resource):
         self.reqparse.add_argument(
             'ifAdminStatus', type=int, required=False, help='No ifAdminStatus value')
         self.reqparse.add_argument(
-            'ifAlias',       type=str, required=False, help='No ifAlias value')
+            'ifAlias', type=str, required=False, help='No ifAlias value')
         self.reqparse.add_argument(
-            'uuid',          type=str, required=mandate_uuid, help='No uuid provided')
+            'uuid', type=str, required=mandate_uuid, help='No uuid provided')
+        self.reqparse.add_argument('clientinfo', type=str, required=False,
+                                   help='Passed by the client to log the upstream user information, e.g. its username.')
         super(InterfaceConfigAPI, self).__init__()
 
     def put(self, devicename, ifindex):
@@ -1916,6 +1947,8 @@ class InterfaceConfigAPI(Resource):
                     'ifAdminStatus=%s, ifAlias=%s, uuid=%s' %
                     (request.remote_addr, devicename, ifindex, ifAdminStatus, ifAlias,
                      uuid))
+        logaction(classname='InterfaceConfigAPI', methodname='put', devicename=devicename,
+                  params=args, mode='rw', src_ip=request.remote_addr, src_user=auth.username())
 
         tstart = datetime.now()
 
@@ -1969,6 +2002,9 @@ class OIDpumpAPI(Resource):
 
         logger.debug('fn=OIDpumpAPI/get : src=%s, %s : pdu=%s, oid=%s' %
                      (request.remote_addr, devicename, pdu, oid))
+        logaction(classname='OIDpumpAPI', methodname='get', devicename=devicename,
+                  params="{'pdu': '%s', 'oid': '%s'}" % (pdu, oid),
+                  src_ip=request.remote_addr, src_user=auth.username())
 
         tstart = datetime.now()
 
@@ -2038,7 +2074,7 @@ class DeviceSshAPI(Resource):
         "description": "PUT on a device : run commands over ssh. Do NOT terminate your command list with logout/exit/etc.",
         "auth": true,
         "auth-type": "BasicAuth",
-        "params": ["driver=ios", "CmdList=list (JSON ordered list)", "uuid=UUID (optional, used to identify the write request in logs)"],
+        "params": ["driver=ios", "CmdList=list (JSON ordered list)", "uuid=UUID (optional, used to identify the write request in logs)", "clientinfo=JoBar"],
         "returns": "status and output indexed by commands"
     }'''
     """ PUT on a device : run commands over ssh """
@@ -2048,11 +2084,13 @@ class DeviceSshAPI(Resource):
     def __init__(self):
         self.reqparse = reqparse.RequestParser()
         self.reqparse.add_argument(
-            'CmdList',       type=str, required=True, help='missing command list')
+            'CmdList', type=str, required=True, help='missing command list')
         self.reqparse.add_argument(
-            'uuid',          type=str, required=mandate_uuid, help='No uuid provided')
-        self.reqparse.add_argument('driver',        type=str, required=True,
+            'uuid', type=str, required=mandate_uuid, help='No uuid provided')
+        self.reqparse.add_argument('driver', type=str, required=True,
                                    help='missing driver, use one of http://knipknap.github.io/exscript/api/Exscript.protocols.drivers-module.html, eg ios')
+        self.reqparse.add_argument('clientinfo', type=str, required=False,
+                                   help='Passed by the client to log the upstream user information, e.g. its username.')
         super(DeviceSshAPI, self).__init__()
 
     def put(self, devicename):
@@ -2071,10 +2109,11 @@ class DeviceSshAPI(Resource):
 
         logger.info('fn=DeviceSshAPI/put : %s : commands=%s, uuid=%s' %
                     (devicename, cmdlist, uuid))
+        logaction(classname='DeviceSshAPI', methodname='put', devicename=devicename,
+                  params=args, mode='rw', src_ip=request.remote_addr, src_user=auth.username())
 
         # we need the credentials from outside
         credentials = credmgr.get_credentials(devicename)
-
 
         tstart = datetime.now()
 
@@ -2158,6 +2197,7 @@ logging.addLevelName(logging.TRACE, "TRACE")
 logging.Logger.trace = lambda inst, msg, *args, **kwargs: inst.log(logging.TRACE, msg, *args, **kwargs)
 logging.trace = lambda msg, *args, **kwargs: logging.log(logging.TRACE, msg, *args, **kwargs)
 
+# the main logger
 log_file = app.config['LOGFILE']
 global logger
 logger = logging.getLogger('aj')
@@ -2186,6 +2226,23 @@ logger.info('mandate_uuid : <%s>' % mandate_uuid)
 logger.info('SNMP cache = %ss' % app.config['SNMP_CACHE'])
 logger.info('SNMP timeout = %ss' % app.config['SNMP_TIMEOUT'])
 logger.info('SNMP retries = %s' % app.config['SNMP_RETRIES'])
+
+# the action logger
+action_log_file = app.config['ACTIONLOGFILE']
+global actionlogger
+actionlogger = logging.getLogger('aja')
+actionhdlr = logging.handlers.RotatingFileHandler(action_log_file,
+                                                  maxBytes=app.config['LOG_MAX_SIZE'],
+                                                  backupCount=app.config['LOG_BACKUP_COUNT'])
+FORMAT = "%(asctime)s - %(process)d - %(name)-3s - %(levelname)-5s - %(message)s"
+actionformatter = logging.Formatter(FORMAT)
+actionhdlr.setFormatter(actionformatter)
+actionlogger.addHandler(actionhdlr)
+actionlogger.setLevel(logging.INFO)
+
+
+
+
 
 # -----------------------------------------------------------------------------------
 # add all URLs and their corresponding classes
@@ -2356,6 +2413,20 @@ def favicon():
 
 
 # -----------------------------------------------------------------------------------
+# call login
+# -----------------------------------------------------------------------------------
+def logaction(classname=None,
+              methodname=None,
+              devicename=None,
+              params=None,
+              mode='ro',
+              src_ip=None,
+              src_user=None):
+
+    actionlogger.info('%s/%s : dev=%s params=%s mode=%s ip=%s srvuser=%s' % (classname, methodname, devicename, params, mode, src_ip, src_user))
+
+
+# -----------------------------------------------------------------------------------
 # when running interactively
 # -----------------------------------------------------------------------------------
 
@@ -2372,7 +2443,9 @@ if False:
 if True:
     if __name__ == '__main__':
         logger.info('AJ start')
+        logaction(classname='main', methodname='start')
         app.run(host=app.config['BIND_IP'],
                 port=app.config['BIND_PORT'],
                 debug=app.config['DEBUG'])
         logger.info('AJ end')
+        logaction(classname='main', methodname='end')
