@@ -72,5 +72,6 @@ In the simple case, you would have one config.py containing data for each enviro
 For more complex situations, you would have distinct config.py per environment. Beside, the environment.conf is then containing a per-server pointer.
 
 Authentication
+--------------
 
 See the [authentication documentation](authentication.md).
