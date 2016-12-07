@@ -1,7 +1,7 @@
 Release notes
 =============
 
-2016.11.30
+2016.12.07
 ----------
 
 - better detection and logging of unsupported Entity MIB
@@ -10,6 +10,7 @@ Release notes
 - fix SNMP-GET and WALK call
 - added  logaction() to each API call (one line per action distinct log file)
 - added `clientinfo` parameter to a few commands to identify the upstream user
+- added modular authentication. You must create etc/auth_external.py (use the provided template)
 
 25.11.2016
 ----------
