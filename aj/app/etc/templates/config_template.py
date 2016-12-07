@@ -13,10 +13,6 @@ class Config(object):
     TRACE = False
     ENVI = 'base'
 
-    # those are used to protect the web-service with Basic-Auth, passed by Apache
-    BASIC_AUTH_USER = 'user'
-    BASIC_AUTH_PASSWORD = 'password'
-
     LOGFILE = '/var/log/aj/aj.log'
     ACTIONLOGFILE = '/var/log/aj/actions.log'
 

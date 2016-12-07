@@ -9,18 +9,13 @@ Agent-Jones is a proxy to network devices. As such, the authentication model is 
 
 ## accessing the Agent-Jones web-service
 
-FIXME: add multiple-auth.
-
 Agent-Jones is located beyond a WSGI interface, which has to be configured to pass down the Basic-Auth ([RFC 2617](https://www.ietf.org/rfc/rfc2617.txt)) heeaders to the Flask module responsible to check the credentials (flask_httpauth:HTTPBasicAuth). 
 
 For Apache 2.4 and WSGI, the option `WSGIPassAuthorization On` in `deployment/apache_config_example.txt` does exactly this.
 
-Flash receive the Basic-Auth header and pass it to flask_httpauth for checking. The very simple get_password() function in aj.py compares the received credentials extracted from the request against these two configuration values from app/etc/config.py:
+Flask receive the Basic-Auth header and pass it to flask_httpauth for checking. The very simple get_verify_password() function in aj.py transmit the credentials along with the request object to AuthExternal.verify_credentials(). This function must be defined in etc/auth_external.py and can be as simple or complex as desired. A template to get started is located in etc/templates/auth_external_template.py.
 
-    app.config['BASIC_AUTH_USER']
-    app.config['BASIC_AUTH_PASSWORD']
-
-The config.py file provide the possibility to have distinct user/password pairs for the diverse environments (Development, Integration, Production).
+The templates shows a cascade of successive checks: REMOTE_ADDR, BasicAuth, ICAP's X-Authenticated-User. Your final code is your business, but basically, return `True` to signal a successful login or `False` to deny access.
 
 ## Agent-Jones accessing the network devices
 
@@ -34,7 +29,7 @@ The call aboves provides a read-only manager (if using SNMPv2). A possibility ex
 
 While creating the manager instance, the callback `get_credentials()` is called with the device name as only parameter:
 
-		credentials = self.credmgr.get_credentials(devicename)
+	credentials = self.credmgr.get_credentials(devicename)
 
 `get_credentials()` is loaded from `app/etc/credentials.py`. It is your responsability to code this file. A very simple example is located in `app/etc/templates/credentials_template.py`, which must be edited and copied to `app/etc/credentials.py`.
 
