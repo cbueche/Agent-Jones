@@ -50,7 +50,6 @@ Ubuntu: this might not be strictly needed anymore, but I have no fresh system to
     sudo apt-get install libapache2-mod-wsgi python-virtualenv build-essential python-dev libffi-dev libsmi2-dev git snmp-mibs-downloader libssl-dev
 
 
-
 Configuration
 -------------
 
@@ -60,6 +59,7 @@ Edit these files to your taste. Copy from the templates and adapt to your own se
     app/etc/config.py
     app/etc/credentials.py
     app/etc/enterprise-numbers.json (get it by running ../util/iana_enterprise_numbers_convert.py)
+    app/etc/auth_external.py (see below)
 
 The configuration happens with these steps:
 
@@ -70,3 +70,7 @@ The configuration happens with these steps:
 In the simple case, you would have one config.py containing data for each environment. This file can then be deployed to all servers. Beside, the environment.conf is then containing a per-server pointer.
 
 For more complex situations, you would have distinct config.py per environment. Beside, the environment.conf is then containing a per-server pointer.
+
+Authentication
+
+See the [authentication documentation](authentication.md).
