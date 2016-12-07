@@ -15,7 +15,7 @@ For Apache 2.4 and WSGI, the option `WSGIPassAuthorization On` in `deployment/ap
 
 Flask receive the Basic-Auth header and pass it to flask_httpauth for checking. The very simple get_verify_password() function in aj.py transmit the credentials along with the request object to AuthExternal.verify_credentials(). This function must be defined in etc/auth_external.py and can be as simple or complex as desired. A template to get started is located in etc/templates/auth_external_template.py.
 
-The templates shows a cascade of successive checks: REMOTE_ADDR, BasicAuth, ICAP's X-Authenticated-User. Your final code is your business, but basically, return `True` to signal a successful login or `False` to deny access.
+The template shows a cascade of successive checks: REMOTE_ADDR, BasicAuth, ICAP's X-Authenticated-User. Your final code is your business, but basically, return `True` to signal a successful login or `False` to deny access.
 
 ## Agent-Jones accessing the network devices
 
