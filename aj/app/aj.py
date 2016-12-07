@@ -17,7 +17,7 @@ Repository & documentation : https://github.com/cbueche/Agent-Jones
 # -----------------------------------------------------------------------------------
 
 # update doc/RELEASES.md when touching this
-__version__ = '30.11.2016'
+__version__ = '7.12.2016'
 
 from flask import Flask, url_for, make_response, jsonify, send_from_directory, request
 from flask import render_template
@@ -51,7 +51,12 @@ full_path = os.path.realpath(__file__)
 script_path = os.path.split(full_path)[0]
 sys.path.insert(0, script_path + '/etc')
 
+# etc/credentials.py knows how to get the credentials for a device (SNMMP, login, etc)
 import credentials
+
+# etc/auth_external.py controls how Agent-Jones is accessed
+import auth_external
+
 
 import utils
 import access_checks
@@ -163,8 +168,8 @@ class DeviceAPI(Resource):
         "params": [],
         "returns": "A lot of device attributes."
     }'''
-    decorators = [auth.login_required]
 
+    @auth.login_required
     def get(self, devicename):
 
         logger.debug('fn=DeviceAPI/get : src=%s, device=%s' % (request.remote_addr, devicename))
@@ -239,7 +244,6 @@ class DeviceAPI(Resource):
         logger.info('fn=DeviceAPI/get : %s : duration=%s' %
                     (devicename, deviceinfo['query-duration']))
         return deviceinfo
-
 
 
     def get_serial(self, m, devicename):
@@ -327,8 +331,7 @@ class DeviceActionAPI(Resource):
                                    help='Passed by the client to log the upstream user information, e.g. its username.')
         super(DeviceActionAPI, self).__init__()
 
-    decorators = [auth.login_required]
-
+    @auth.login_required
     def post(self, devicename):
 
         args = self.reqparse.parse_args()
@@ -402,7 +405,6 @@ class DeviceSaveAPI(Resource):
         "returns": "status info"
     }
     '''
-    decorators = [auth.login_required]
 
     # check argument
     def __init__(self):
@@ -412,6 +414,7 @@ class DeviceSaveAPI(Resource):
                                    help='Passed by the client to log the upstream user information, e.g. its username.')
         super(DeviceSaveAPI, self).__init__()
 
+    @auth.login_required
     def put(self, devicename):
 
         args = self.reqparse.parse_args()
@@ -516,7 +519,6 @@ class InterfaceAPI(Resource):
         "params": ["clientinfo=JoBar"],
         "returns": "A list of device interfaces."
     }'''
-    decorators = [auth.login_required]
 
     # check arguments
     def __init__(self):
@@ -537,6 +539,7 @@ class InterfaceAPI(Resource):
                                    help='Passed by the client to log the upstream user information, e.g. its username.')
         super(InterfaceAPI, self).__init__()
 
+    @auth.login_required
     def get(self, devicename):
 
         logger.debug('fn=InterfaceAPI/get : src=%s, %s' % (request.remote_addr, devicename))
@@ -1051,8 +1054,8 @@ class InterfaceCounterAPI(Resource):
         "params": [],
         "returns": "A list of interfaces counters. Use inOctets and outOctets to get an octet counter independent of 64 bit (ifX HC) capabilities of the target."
     }'''
-    decorators = [auth.login_required]
 
+    @auth.login_required
     def get(self, devicename, ifindex):
 
         logger.debug('fn=InterfaceCounterAPI/get : src=%s, %s : index=%s' %
@@ -1122,8 +1125,8 @@ class MacAPI(Resource):
         "params": [],
         "returns": "A list of MAC addresses indexed by ifIndex."
     }'''
-    decorators = [auth.login_required]
 
+    @auth.login_required
     def get(self, devicename):
         #-------------------------
         logger.debug('fn=MacAPI/get : src=%s, %s' % (request.remote_addr, devicename))
@@ -1293,7 +1296,7 @@ class CDPAPI(Resource):
         "params": [],
         "returns": "A list of info indexed by ifIndex."
     }'''
-    decorators = [auth.login_required]
+
 
     def get(self, devicename):
         logger.debug('fn=CDPAPI/get : src=%s, %s' % (request.remote_addr, devicename))
@@ -1411,8 +1414,8 @@ class TrunkAPI(Resource):
         "params": [],
         "returns": "A list of info indexed by ifIndex."
     }'''
-    decorators = [auth.login_required]
 
+    @auth.login_required
     def get(self, devicename):
         #-------------------------
         logger.debug('fn=TrunkAPI/get : src=%s, %s' % (request.remote_addr, devicename))
@@ -1486,8 +1489,8 @@ class ARPAPI(Resource):
         "params": [],
         "returns": "A list of entries."
     }'''
-    decorators = [auth.login_required]
 
+    @auth.login_required
     def get(self, devicename):
         # -------------------------
         logger.debug('fn=ARPAPI/get : src=%s, %s' % (request.remote_addr, devicename))
@@ -1600,8 +1603,8 @@ class DHCPsnoopAPI(Resource):
         "params": [],
         "returns": "A list of DHCP snooped entries indexed by ifIndex."
     }'''
-    decorators = [auth.login_required]
 
+    @auth.login_required
     def get(self, devicename):
         logger.debug('fn=DHCPsnoopAPI/get : src=%s, %s' % (request.remote_addr, devicename))
         logaction(classname='DHCPsnoopAPI', methodname='get', devicename=devicename,
@@ -1746,8 +1749,8 @@ class vlanlistAPI(Resource):
         "params": [],
         "returns": "A list of vlans for a device."
     }'''
-    decorators = [auth.login_required]
 
+    @auth.login_required
     def get(self, devicename):
 
         logger.debug('fn=vlanlistAPI/get : src=%s, device=%s' % (request.remote_addr, devicename))
@@ -1853,7 +1856,6 @@ class PortToVlanAPI(Resource):
         "params": ["vlan=NNN", "uuid=UUID (optional, used to identify the write request in logs)", "clientinfo=JoBar"],
         "returns": "status"
     }'''
-    decorators = [auth.login_required]
 
     # check argument
     def __init__(self):
@@ -1866,6 +1868,7 @@ class PortToVlanAPI(Resource):
                                    help='Passed by the client to log the upstream user information, e.g. its username.')
         super(PortToVlanAPI, self).__init__()
 
+    @auth.login_required
     def put(self, devicename, ifindex):
 
         args = self.reqparse.parse_args()
@@ -1921,7 +1924,6 @@ class InterfaceConfigAPI(Resource):
         "returns": "status"
     }'''
     """ PUT on an interface : configure the interface """
-    decorators = [auth.login_required]
 
     # check argument
     def __init__(self):
@@ -1936,6 +1938,7 @@ class InterfaceConfigAPI(Resource):
                                    help='Passed by the client to log the upstream user information, e.g. its username.')
         super(InterfaceConfigAPI, self).__init__()
 
+    @auth.login_required
     def put(self, devicename, ifindex):
 
         args = self.reqparse.parse_args()
@@ -1996,8 +1999,8 @@ class OIDpumpAPI(Resource):
         "params": [],
         "returns": "A complete data structure containing the results of the get/walk."
     }'''
-    decorators = [auth.login_required]
 
+    @auth.login_required
     def get(self, devicename, pdu, oid):
 
         logger.debug('fn=OIDpumpAPI/get : src=%s, %s : pdu=%s, oid=%s' %
@@ -2078,7 +2081,6 @@ class DeviceSshAPI(Resource):
         "returns": "status and output indexed by commands"
     }'''
     """ PUT on a device : run commands over ssh """
-    decorators = [auth.login_required]
 
     # check arguments
     def __init__(self):
@@ -2093,6 +2095,7 @@ class DeviceSshAPI(Resource):
                                    help='Passed by the client to log the upstream user information, e.g. its username.')
         super(DeviceSshAPI, self).__init__()
 
+    @auth.login_required
     def put(self, devicename):
 
         args = self.reqparse.parse_args()
@@ -2383,23 +2386,20 @@ snimpy = snmpmgr.SNMPmgr(logger, app, credmgr)
 
 
 # -----------------------------------------------------------------------------------
-# authentication when needed
+# authentication
 # -----------------------------------------------------------------------------------
 
-@auth.get_password
-def get_password(username):
-    logger.debug('username : <%s>' % username)
-    if username == app.config['BASIC_AUTH_USER']:
-        return app.config['BASIC_AUTH_PASSWORD']
-    return None
+extauth = auth_external.AuthExternal()
 
+@auth.verify_password
+def verify_pw(username, password):
+    return extauth.verify_credentials(username, password, request)
 
 @auth.error_handler
 def unauthorized():
     logger.debug('not authorized')
+    # returning 403 instead of 401 would prevent browsers from displaying the default auth dialog
     return make_response(jsonify({'message': 'Unauthorized access'}), 401)
-    # returning 403 instead of 401 would prevent browsers from displaying the
-    # default auth dialog
 
 
 # -----------------------------------------------------------------------------------
