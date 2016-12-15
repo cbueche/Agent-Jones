@@ -1,21 +1,17 @@
 Installation
 ------------
 
-Installation must be done within a [Python virtual environment](http://www.virtualenv.org/). The goal is to isolate your application from courageous system administrators running OS upgrades without thinking first. The code below is for Python 2.6 on Ubuntu 10.04, but it has been working fine on Ubuntu 14.04 with Python 2.7.
+Installation must be done within a [Python virtual environment](http://www.virtualenv.org/). The goal is to isolate your application from courageous system administrators running OS upgrades without thinking first. The code below is for Python 2.7 on Ubuntu.
 
-    /opt/local/bin/virtualenv-2.6 --no-site-packages aj
-    cd aj
-    source bin/activate
+    git clone https://github.com/cbueche/Agent-Jones.git
+    cd Agent-Jones/aj
+    virtualenv --no-site-packages env
+    source env/bin/activate
     pip install -U setuptools
-    pip install -r .../deployment/requirements.pip
-
-    rsync -av .../app ./
+    pip install -r ../deployment/requirements.txt
     python aj.py
-    # patch snimpy if needed (only for snimpy version < 0.8.2)
-    # https://github.com/vincentbernat/snimpy/commit
-    /6857ca3af5ca4858161e7e8e3985bd07ecd7b4a2
 
-[This other patch](https://github.com/vincentbernat/snimpy/commit/d3a36082d417bb451e469f33938e1d0821b615ea) might be needed if you get `prettyOut` from a SNMP-get on sysObjectID or another similar get returning an OID.
+[This patch](https://github.com/vincentbernat/snimpy/commit/d3a36082d417bb451e469f33938e1d0821b615ea) might be needed if you get `prettyOut` from a SNMP-get on sysObjectID or another similar get returning an OID.
 
 File : site-packages/snimpy/snmp.py
 
