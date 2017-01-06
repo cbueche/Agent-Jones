@@ -42,3 +42,7 @@ Caused by Avaya phones. See the Release notes and install the latest version, it
 ## why no support for SNMP contexts
 
 Because the underlying snimpy library does not support them.
+
+## you get `prettyOut` from a SNMP-get on sysObjectID or another similar get returning an OID
+
+[This patch](https://github.com/vincentbernat/snimpy/commit/d3a36082d417bb451e469f33938e1d0821b615ea) might be needed depending on your combination of snimpy and PySNMP versions.

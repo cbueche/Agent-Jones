@@ -9,30 +9,21 @@ Installation must be done within a [Python virtual environment](http://www.virtu
     source env/bin/activate
     pip install -U setuptools
     pip install -r ../deployment/requirements.txt
+
+This command will most likely produce a lot of output with warnings, etc. LOok for the following success message at the end :
+
+    Successfully installed Flask Flask-HTTPAuth Flask-RESTful netaddr cffi
+    snimpy PyCrypto Exscript ordereddict paramiko MarkupSafe Werkzeug Jinja2
+    itsdangerous click aniso8601 six pytz pycparser pysnmp cryptography pyasn1
+    python-dateutil pysmi idna enum34 ipaddress ply
+
+Then try to run Agent-Jones :
+
     python aj.py
 
-[This patch](https://github.com/vincentbernat/snimpy/commit/d3a36082d417bb451e469f33938e1d0821b615ea) might be needed if you get `prettyOut` from a SNMP-get on sysObjectID or another similar get returning an OID.
+It will fail with `ImportError: No module named credentials`. It's a sign of success, now go to the **"Configuration"** part below.
 
-File : site-packages/snimpy/snmp.py
-
-    --- snmp.py.sav	2016-01-29 10:53:47.112808191 +0100
-    +++ snmp.py	2016-01-29 10:54:48.817420481 +0100
-    @@ -215,6 +215,12 @@
-
-         def _convert(self, value):
-             """Convert a PySNMP value to some native Python type"""
-    +        try:
-    +            # With PySNMP 4.3+, an OID is a ObjectIdentity. We try to
-    +            # extract it while being compatible with earlier releases.
-    +            value = value.getOid()
-    +        except AttributeError:
-    +            pass
-             for cl, fn in {rfc1902.Integer: int,
-                            rfc1902.Integer32: int,
-                            rfc1902.OctetString: bytes,
-
-Agent-Jones is a WSGI service within Apache, see the files in deployment/ and the [WSGI documentation](https://code.google.com/p/modwsgi/).
-
+Agent-Jones is a WSGI service within Apache, see the files in deployment/ and the WSGI documentation [here](https://github.com/GrahamDumpleton/mod_wsgi) and [here](http://modwsgi.readthedocs.io/en/develop/).
 
 Platform-specific notes
 -----------------------
@@ -41,10 +32,13 @@ OS X: run this before "pip":
 
     export C_INCLUDE_PATH=/opt/local/include (use your correct path, this is for macports)
 
-Ubuntu: this might not be strictly needed anymore, but I have no fresh system to test. It was needed before I added all needed MIBs. YMMV.
+Ubuntu:
 
-    sudo apt-get install libapache2-mod-wsgi python-virtualenv build-essential python-dev libffi-dev libsmi2-dev git snmp-mibs-downloader libssl-dev
+    sudo apt-get install libapache2-mod-wsgi python-virtualenv build-essential python-dev libffi-dev libsmi2-dev git libssl-dev
 
+CentOS 7.x:
+
+    yum install python-virtualenv libffi-devel libsmi-devel openssl-devel
 
 Configuration
 -------------
