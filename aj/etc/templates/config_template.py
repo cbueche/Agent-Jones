@@ -13,11 +13,8 @@ class Config(object):
     TRACE = False
     ENVI = 'base'
 
-    # those are used to protect the web-service with Basic-Auth, passed by Apache
-    BASIC_AUTH_USER = 'user'
-    BASIC_AUTH_PASSWORD = 'password'
-
     LOGFILE = '/var/log/aj/aj.log'
+    ACTIONLOGFILE = '/var/log/aj/actions.log'
 
     # if True, PUT and POST requests will need to contain a uuid parameter
     MANDATE_UUID = True

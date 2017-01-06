@@ -1,6 +1,23 @@
 Release notes
 =============
 
+6.1.2017
+--------
+
+- re-organized using a standard application layout
+- add a PostgreSQL credential example
+
+7.12.2016
+----------
+
+- better detection and logging of unsupported Entity MIB
+- SNMPv1 support
+- SNMPv3 support (without SNMP contexts)
+- fix SNMP-GET and WALK call
+- added  logaction() to each API call (one line per action distinct log file)
+- added `clientinfo` parameter to a few commands to identify the upstream user
+- added modular authentication. You must create etc/auth_external.py (use the provided template)
+
 25.11.2016
 ----------
 
@@ -42,7 +59,7 @@ Release notes
 ---------
 
 - add trunk collection with /aj/api/v1/trunk/device.name
-- get the same info attached to each interface with /aj/api/v1/interfaces/device.name?showtrunks=1 
+- get the same info attached to each interface with /aj/api/v1/interfaces/device.name?showtrunks=1
 - configurable port_binding for Flask
 
 

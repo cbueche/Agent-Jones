@@ -3,15 +3,15 @@
 .Python
 
 # exclude productive config files
-aj/app/etc/*.py
+aj/etc/*.py
 
 # IANA stuff can be re-generated
 util/enterprise-numbers
 util/enterprise-numbers.json
-aj/app/etc/enterprise-numbers.json
+aj/etc/enterprise-numbers.json
 
 # virtualenv
-aj/.python-version
+.python-version
 
 # Pycharm
 .idea

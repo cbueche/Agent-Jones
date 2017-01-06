@@ -139,6 +139,6 @@ For easy questions, [feel free to email me](http://address-protector.com/frTvcQ8
 Credits
 -------
 
-- [Connectis AG, Bern](http://www.connectis.ch)
+- [SPIE ICS AG, Bern](http://www.spie-ics.ch)
 - [Vincent Bernat](http://vincent.bernat.im/en/)
 - [Christian Ramseyer](http://www.netnea.com/cms/netnea-the-team/christian-ramseyer/)
