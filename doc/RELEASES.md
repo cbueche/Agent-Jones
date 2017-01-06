@@ -1,7 +1,13 @@
 Release notes
 =============
 
-2016.12.07
+6.1.2017
+--------
+
+- re-organized using a standard application layout
+- add a PostgreSQL credential example
+
+7.12.2016
 ----------
 
 - better detection and logging of unsupported Entity MIB
@@ -16,6 +22,11 @@ Release notes
 ----------
 
 - better logging for ssh commands
+
+23.11.2016
+----------
+
+- fix empty vendorType for Cisco 3850
 
 21.11.2016
 ----------
@@ -48,7 +59,7 @@ Release notes
 ---------
 
 - add trunk collection with /aj/api/v1/trunk/device.name
-- get the same info attached to each interface with /aj/api/v1/interfaces/device.name?showtrunks=1 
+- get the same info attached to each interface with /aj/api/v1/interfaces/device.name?showtrunks=1
 - configurable port_binding for Flask
 
 
