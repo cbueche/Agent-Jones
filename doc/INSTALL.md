@@ -3,8 +3,8 @@ Installation
 
 Installation must be done within a [Python virtual environment](http://www.virtualenv.org/). The goal is to isolate your application from courageous system administrators running OS upgrades without thinking first. The code below is for Python 2.7 on Ubuntu.
 
-    git clone https://github.com/cbueche/Agent-Jones.git
-    cd Agent-Jones/aj
+    git clone https://github.com/cbueche/Agent-Jones.git AJ
+    cd AJ
     virtualenv --no-site-packages env
     source env/bin/activate
     pip install -U setuptools
