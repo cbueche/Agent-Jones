@@ -23,6 +23,11 @@ Release notes
 
 - better logging for ssh commands
 
+23.11.2016
+----------
+
+- fix empty vendorType for Cisco 3850
+
 21.11.2016
 ----------
 
