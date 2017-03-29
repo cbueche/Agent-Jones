@@ -15,6 +15,7 @@ aj/etc/enterprise-numbers.json
 
 # Pycharm
 .idea
+tags
 
 # OS X
 .DS_Store
