@@ -3,7 +3,7 @@
 
 aj.py - main script for Agent-Jones web-service
 
-Agent-Jones is a web-service used retrieve info from and configure Cisco devices.
+Agent-Jones is a web-service used to retrieve info from and configure Cisco devices.
 Mostly switches, but it could as well be used for routers. It is the back-end part of
 Magic-Button and other nice front-ends we are developing.
 
@@ -17,7 +17,7 @@ Repository & documentation : https://github.com/cbueche/Agent-Jones
 # -----------------------------------------------------------------------------------
 
 # update doc/RELEASES.md when touching this
-__version__ = '6.1.2017'
+__version__ = '29.3.2017'
 
 from flask import Flask, url_for, make_response, jsonify, send_from_directory, request
 from flask import render_template
@@ -1545,6 +1545,7 @@ class ARPAPI(Resource):
                 entry['ip'] = util.convert_ip_from_snmp_format(ipNetToPhysicalNetAddressType, ipNetToPhysicalNetAddress)
                 arps.append(entry)
                 i += 1
+                logger.trace("fn=ARPAPI/get_arp_from_device : %s : idx=%s, mac=%s, ip=%s" % (devicename, entry['ifindex'], entry['mac'], entry['ip']))
 
             nbr_of_entries = i
             logger.info("fn=ARPAPI/get_arp_from_device : %s : got %s ARP entries" % (devicename, nbr_of_entries))
@@ -1575,6 +1576,7 @@ class ARPAPI(Resource):
                 entry['ip'] = str(ipNetToMediaNetAddress)
                 arps.append(entry)
                 i += 1
+                logger.trace("fn=ARPAPI/get_arp_from_device : %s : idx=%s, mac=%s, ip=%s" % (devicename, entry['ifindex'], entry['mac'], entry['ip']))
 
             nbr_of_entries = i
             logger.info("fn=ARPAPI/get_arp_from_device : %s : got %s ARP entries" % (devicename, nbr_of_entries))
