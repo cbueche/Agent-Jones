@@ -31,7 +31,7 @@ class SNMPmgr():
 	           timeout=None,
 	           retries=None,
 	           cache=None,
-	           bulk=True,
+	           bulk=20,
 	           none=True,
 	           rw=False,
 	           community_format='{}'):

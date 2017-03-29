@@ -1545,6 +1545,7 @@ class ARPAPI(Resource):
                 entry['ip'] = util.convert_ip_from_snmp_format(ipNetToPhysicalNetAddressType, ipNetToPhysicalNetAddress)
                 arps.append(entry)
                 i += 1
+                logger.trace("fn=ARPAPI/get_arp_from_device : %s : idx=%s, mac=%s, ip=%s" % (devicename, entry['ifindex'], entry['mac'], entry['ip']))
 
             nbr_of_entries = i
             logger.info("fn=ARPAPI/get_arp_from_device : %s : got %s ARP entries" % (devicename, nbr_of_entries))
@@ -1575,6 +1576,7 @@ class ARPAPI(Resource):
                 entry['ip'] = str(ipNetToMediaNetAddress)
                 arps.append(entry)
                 i += 1
+                logger.trace("fn=ARPAPI/get_arp_from_device : %s : idx=%s, mac=%s, ip=%s" % (devicename, entry['ifindex'], entry['mac'], entry['ip']))
 
             nbr_of_entries = i
             logger.info("fn=ARPAPI/get_arp_from_device : %s : got %s ARP entries" % (devicename, nbr_of_entries))
