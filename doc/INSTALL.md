@@ -8,9 +8,9 @@ Installation must be done within a [Python virtual environment](http://www.virtu
     virtualenv --no-site-packages env
     source env/bin/activate
     pip install -U setuptools
-    pip install -r ../deployment/requirements.txt
+    pip install -r deployment/requirements.txt
 
-This command will most likely produce a lot of output with warnings, etc. LOok for the following success message at the end :
+This command will most likely produce a lot of output with warnings, etc. Look for the following success message at the end :
 
     Successfully installed Flask Flask-HTTPAuth Flask-RESTful netaddr cffi
     snimpy PyCrypto Exscript ordereddict paramiko MarkupSafe Werkzeug Jinja2
