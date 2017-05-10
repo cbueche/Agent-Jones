@@ -57,7 +57,7 @@ class SysOidAn():
         this is currently only implement for Cisco, but other vendors might be added
         '''
 
-        self.logger.debug('fn=SysOidAn/translate_sysoid : got sysoid = %s' % sysoid)
+        self.logger.trace('fn=SysOidAn/translate_sysoid : got sysoid = %s' % sysoid)
 
         # match sysoid to vendor
         vendor = ''
@@ -66,7 +66,7 @@ class SysOidAn():
         match = regex.search(sysoid)
         if match:
             vendor_id = match.group(1)
-            self.logger.debug(
+            self.logger.trace(
                 'fn=SysOidAn/translate_sysoid : vendor id = %s' % vendor_id)
             if vendor_id in self.enterprises:
                 vendor = self.enterprises[vendor_id]['o']

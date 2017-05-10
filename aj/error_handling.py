@@ -21,6 +21,7 @@ class Errors():
         'ERROR_SNMP':       {'nr': 10,  'code': 'ERROR_SNMP',       'text': 'SNMP timeout, wrong communities or access refused'},
         'ERROR_SNMP_PDU':   {'nr': 11,  'code': 'ERROR_SNMP_PDU',   'text': 'SNMP PDU is unknown, must be "get" or "walk"'},
         'ERROR_SNMP_OP':    {'nr': 12,  'code': 'ERROR_SNMP_OP',    'text': 'SNMP operation failed'},
+        'ERROR_SNMP_MGR':   {'nr': 13,  'code': 'ERROR_SNMP_MGR',   'text': 'SNMP manager creation failed'},
         'ERROR_MIB_ENTITY': {'nr': 20,  'code': 'ERROR_MIB_ENTITY', 'text': 'Issue with Entity MIB'},
         'ERROR_OP':         {'nr': 30,  'code': 'ERROR_OP',         'text': 'Operation failed'},
 
