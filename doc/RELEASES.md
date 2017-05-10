@@ -1,6 +1,15 @@
 Release notes
 =============
 
+10.5.2017
+--------
+
+- Fix an issue in the `interfaces/get` API call : some Cisco switches (notably WS-C3750X-12S-E under IOS 15.0(2)SE6 fc2) show phantom entries in dot3StatsDuplexStatus. They are now ignored.
+- Fix an issue in the `interfaces/get` API call : some Cisco switches (notably WS-C3750X-12S under IOS 15.0(2)SE7 fc1) show incomplete EntityMIB on interfaces types `cevPortGigBaseSX`. This can be reproduced by polling `entPhysicalContainedIn`, the resulting value is `0`, meaning "not contained in any other physical entity". In these cases, Agent-Jones returns the MIB value of `0`. This is not perfect, but Agent-Jones cannot fix Cisco IOS.
+- Detect non-existent devices when creating the SNMP manager.
+- streamline the logging.
+
+
 6.1.2017
 --------
 

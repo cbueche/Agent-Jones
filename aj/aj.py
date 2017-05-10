@@ -17,7 +17,7 @@ Repository & documentation : https://github.com/cbueche/Agent-Jones
 # -----------------------------------------------------------------------------------
 
 # update doc/RELEASES.md when touching this
-__version__ = '29.3.2017'
+__version__ = '10.5.2017'
 
 from flask import Flask, url_for, make_response, jsonify, send_from_directory, request
 from flask import render_template
@@ -182,7 +182,10 @@ class DeviceAPI(Resource):
         deviceinfo['name'] = devicename
 
         logger.debug('fn=DeviceAPI/get : %s : requesting a SNMP manager' % (devicename))
-        m = snimpy.create(devicename=devicename, bulk=False)
+        m, errors = snimpy.create(devicename=devicename, bulk=False)
+
+        if m is None:
+            return errst.status('ERROR_SNMP_MGR', errors), 200
 
         if not check.check_snmp(m, devicename, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
@@ -428,7 +431,10 @@ class DeviceSaveAPI(Resource):
         tstart = datetime.now()
 
         logger.debug('fn=DeviceSaveAPI/put : %s : requesting a SNMP manager' % (devicename))
-        m = snimpy.create(devicename=devicename, cache=0, rw=True)
+        m, errors = snimpy.create(devicename=devicename, cache=0, rw=True)
+
+        if m is None:
+            return errst.status('ERROR_SNMP_MGR', errors), 200
 
         if not check.check_snmp(m, devicename, 'RW'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
@@ -561,7 +567,10 @@ class InterfaceAPI(Resource):
                   params=args, src_ip=request.remote_addr, src_user=auth.username())
 
         logger.debug('fn=InterfaceAPI/get : %s : requesting a SNMP manager' % (devicename))
-        m = snimpy.create(devicename=devicename)
+        m, errors = snimpy.create(devicename=devicename)
+
+        if m is None:
+            return errst.status('ERROR_SNMP_MGR', errors), 200
 
         if not check.check_snmp(m, devicename, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
@@ -573,9 +582,11 @@ class InterfaceAPI(Resource):
         # collect the mapping between interfaces and entities
         # constructs a table (dict) 'ifname' --> 'enclosing-chassis'
         # e.g. {<String: GigabitEthernet1/0/5>: <Integer: 1001>, etc}
+        logger.debug('fn=InterfaceAPI/get : %s : start poll EntityMIB' % (devicename))
         entities = self.collect_entities(m, devicename)
         merged_entities = self.merge_entities(entities, devicename)
         entities_if_to_chassis = self.get_ports(merged_entities, devicename)
+        logger.debug('fn=InterfaceAPI/get : %s : end poll EntityMIB, %s ports found' % (devicename, len(entities_if_to_chassis)))
 
         # get the mac list
         if showmac:
@@ -656,7 +667,9 @@ class InterfaceAPI(Resource):
         logger.debug('fn=InterfaceAPI/get : %s : get dot3StatsDuplexStatus' % devicename)
         for index, duplex in m.dot3StatsDuplexStatus.iteritems():
             logger.trace('fn=InterfaceAPI/get : %s : index = %s, duplex = %s' % (devicename, index, duplex))
-            interfaces[index]['dot3StatsDuplexStatus'] = str(duplex)
+            # only if this interface already exists (some Cisco switches produce phantom entries in dot3StatsDuplexStatus)
+            if index in interfaces:
+                interfaces[index]['dot3StatsDuplexStatus'] = str(duplex)
         # add a null value when an index has no entry in the dot3StatsDuplexStatus table
         for interface in interfaces:
             if not 'dot3StatsDuplexStatus' in interfaces[interface]:
@@ -665,7 +678,9 @@ class InterfaceAPI(Resource):
         logger.debug('fn=InterfaceAPI/get : %s : get vmVlan' % devicename)
         for index, vlan_id in m.vmVlan.iteritems():
             logger.trace('fn=InterfaceAPI/get : %s : index = %s, vlan_id = %s' % (devicename, index, vlan_id))
-            interfaces[index]['vmVlanNative']['nr'] = vlan_id
+            # only if this interface already exists (no risk after the experience with dot3StatsDuplexStatus)
+            if index in interfaces:
+                interfaces[index]['vmVlanNative']['nr'] = vlan_id
         # add a null value when an index has no entry in the vmMembershipTable table
         for interface in interfaces:
             if not 'vmVlanNative' in interfaces[interface]:
@@ -679,9 +694,9 @@ class InterfaceAPI(Resource):
             interfaces[index]['index'] = index
 
             # try to map the ifDescr / ifName to a physical entity, namely the enclosing chassis
+            logger.debug('fn=InterfaceAPI/get : %s : matching interface %s (%s)' % (devicename, index, desc))
             # 1. try ifDesc first
             desc = interfaces[index]['ifDescr']
-            logger.debug('fn=InterfaceAPI/get : %s : matching interface %s (%s)' % (devicename, index, desc))
             name = interfaces[index]['ifName']
             if desc in entities_if_to_chassis:
                 interfaces[index]['physicalIndex'] = entities_if_to_chassis[desc]['chassis']
@@ -814,8 +829,8 @@ class InterfaceAPI(Resource):
                                           tdiff.days * 24 * 3600) * 10 ** 6) / 1000
         deviceinfo['query-duration'] = duration
 
-        logger.info('fn=InterfaceAPI/get : %s : duration=%s' %
-                    (devicename, deviceinfo['query-duration']))
+        logger.info('fn=InterfaceAPI/get : %s : found %s interfaces, duration=%s' %
+                    (devicename, len(interfaces_array), deviceinfo['query-duration']))
         return deviceinfo
 
     def get_poe(self, devicename, m):
@@ -1028,6 +1043,12 @@ class InterfaceAPI(Resource):
 
         parent_idx = merged_entities[port_idx]['cin']
         logger.trace('fn=InterfaceAPI/find_parent_of_type : %s : parent of port %s is %s' % (devicename, port_idx, parent_idx))
+        # some switches produces interfaces not contained in a chassis, so this recursive check bombs
+        # Interrupt this bomb when the parent is zero. In MIB, "entPhysicalContainedIn" = 0 is described as
+        # "this physical entity is not contained in any other physical entity"
+        if parent_idx == 0:
+            logger.info('fn=InterfaceAPI/find_parent_of_type : %s : parent of port %s is zero, search stopped' % (devicename, port_idx))
+            return parent_idx
 
         type_of_parent = merged_entities[parent_idx]['class']
         logger.trace('fn=InterfaceAPI/find_parent_of_type : %s : type of parent %s is %s' % (devicename, parent_idx, type_of_parent))
@@ -1066,7 +1087,10 @@ class InterfaceCounterAPI(Resource):
         tstart = datetime.now()
 
         logger.debug('fn=InterfaceCounterAPI/get : %s : requesting a SNMP manager' % (devicename))
-        m = snimpy.create(devicename=devicename, cache=False)
+        m, errors = snimpy.create(devicename=devicename, cache=False)
+
+        if m is None:
+            return errst.status('ERROR_SNMP_MGR', errors), 200
 
         if not check.check_snmp(m, devicename, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
@@ -1136,7 +1160,10 @@ class MacAPI(Resource):
         tstart = datetime.now()
 
         logger.debug('fn=MacAPI/get : %s : requesting a SNMP manager' % (devicename))
-        m = snimpy.create(devicename=devicename)
+        m, errors = snimpy.create(devicename=devicename)
+
+        if m is None:
+            return errst.status('ERROR_SNMP_MGR', errors), 200
 
         if not check.check_snmp(m, devicename, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
@@ -1217,7 +1244,10 @@ class MacAPI(Resource):
                 # this works probably only for Cisco, where it is called "community string indexing"
                 # http://www.cisco.com/c/en/us/support/docs/ip/simple-network-management-protocol-snmp/40367-camsnmp40367.html
                 logger.debug('fn=MacAPI/get_macs_from_device : %s : requesting a SNMP manager' % (devicename))
-                lm = snimpy.create(devicename=devicename, community_format='{}@%s' % vlan_nr)
+                lm, errors = snimpy.create(devicename=devicename, community_format='{}@%s' % vlan_nr)
+
+                if lm is None:
+                    return errst.status('ERROR_SNMP_MGR', errors), 200
 
                 # we pull them in an large block so we can catch timeouts for broken IOS versions
                 # happened on a big stack of 8 Cisco 3750 running 12.2(46)SE (fc2)
@@ -1306,7 +1336,10 @@ class CDPAPI(Resource):
         tstart = datetime.now()
 
         logger.debug('fn=CDPAPI/get : %s : requesting a SNMP manager' % (devicename))
-        m = snimpy.create(devicename=devicename)
+        m, errors = snimpy.create(devicename=devicename)
+
+        if m is None:
+            return errst.status('ERROR_SNMP_MGR', errors), 200
 
         if not check.check_snmp(m, devicename, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
@@ -1425,7 +1458,10 @@ class TrunkAPI(Resource):
         tstart = datetime.now()
 
         logger.debug('fn=TrunkAPI/get : %s : requesting a SNMP manager' % (devicename))
-        m = snimpy.create(devicename=devicename)
+        m, errors = snimpy.create(devicename=devicename)
+
+        if m is None:
+            return errst.status('ERROR_SNMP_MGR', errors), 200
 
         if not check.check_snmp(m, devicename, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
@@ -1500,7 +1536,10 @@ class ARPAPI(Resource):
         tstart = datetime.now()
 
         logger.debug('fn=ARPAPI/get : %s : requesting a SNMP manager' % (devicename))
-        m = snimpy.create(devicename=devicename)
+        m, errors = snimpy.create(devicename=devicename)
+
+        if m is None:
+            return errst.status('ERROR_SNMP_MGR', errors), 200
 
         if not check.check_snmp(m, devicename, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
@@ -1615,7 +1654,10 @@ class DHCPsnoopAPI(Resource):
         tstart = datetime.now()
 
         logger.debug('fn=DHCPsnoopAPI/get : %s : requesting a SNMP manager' % (devicename))
-        m = snimpy.create(devicename=devicename)
+        m, errors = snimpy.create(devicename=devicename)
+
+        if m is None:
+            return errst.status('ERROR_SNMP_MGR', errors), 200
 
         if not check.check_snmp(m, devicename, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
@@ -1762,7 +1804,10 @@ class vlanlistAPI(Resource):
         tstart = datetime.now()
 
         logger.debug('fn=vlanlistAPI/get : %s : requesting a SNMP manager' % (devicename))
-        m = snimpy.create(devicename=devicename)
+        m, errors = snimpy.create(devicename=devicename)
+
+        if m is None:
+            return errst.status('ERROR_SNMP_MGR', errors), 200
 
         if not check.check_snmp(m, devicename, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
@@ -1885,7 +1930,10 @@ class PortToVlanAPI(Resource):
         tstart = datetime.now()
 
         logger.debug('fn=PortToVlanAPI/put : %s : requesting a SNMP manager' % (devicename))
-        m = snimpy.create(devicename=devicename, rw=True)
+        m, errors = snimpy.create(devicename=devicename, rw=True)
+
+        if m is None:
+            return errst.status('ERROR_SNMP_MGR', errors), 200
 
         if not check.check_snmp(m, devicename, 'RW'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
@@ -1958,7 +2006,10 @@ class InterfaceConfigAPI(Resource):
         tstart = datetime.now()
 
         logger.debug('fn=InterfaceConfigAPI/put : %s : requesting a SNMP manager' % (devicename))
-        m = snimpy.create(devicename=devicename, rw=True)
+        m, errors = snimpy.create(devicename=devicename, rw=True)
+
+        if m is None:
+            return errst.status('ERROR_SNMP_MGR', errors), 200
 
         if not check.check_snmp(m, devicename, 'RW'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
@@ -2018,7 +2069,9 @@ class OIDpumpAPI(Resource):
         # recommended method by the developer of snimpy.
         # https://github.com/vincentbernat/snimpy/issues/62
         logger.debug('fn=OIDpumpAPI/get : %s : requesting a SNMP manager' % (devicename))
-        m = snimpy.create(devicename=devicename, bulk=False, cache=0)
+        m, errors = snimpy.create(devicename=devicename, bulk=False, cache=0)
+        if m is None:
+            return errst.status('ERROR_SNMP_MGR', errors), 200
         if not check.check_snmp(m, devicename, 'RO'):
             return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
         session = m._session._session
