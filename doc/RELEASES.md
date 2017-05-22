@@ -1,6 +1,11 @@
 Release notes
 =============
 
+22.5.2017
+---------
+
+- Fix an issue in `interfaces/get` API call : some NetModules 3G routers (notably NB1600) have empty IF-MIB::ifName and Entity tables. Adds some belts and holders to the interface entity-matching loop to detect future inconsistencies.
+
 10.5.2017
 --------
 

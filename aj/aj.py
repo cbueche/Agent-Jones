@@ -17,7 +17,7 @@ Repository & documentation : https://github.com/cbueche/Agent-Jones
 # -----------------------------------------------------------------------------------
 
 # update doc/RELEASES.md when touching this
-__version__ = '10.5.2017'
+__version__ = '22.5.2017'
 
 from flask import Flask, url_for, make_response, jsonify, send_from_directory, request
 from flask import render_template
@@ -670,10 +670,6 @@ class InterfaceAPI(Resource):
             # only if this interface already exists (some Cisco switches produce phantom entries in dot3StatsDuplexStatus)
             if index in interfaces:
                 interfaces[index]['dot3StatsDuplexStatus'] = str(duplex)
-        # add a null value when an index has no entry in the dot3StatsDuplexStatus table
-        for interface in interfaces:
-            if not 'dot3StatsDuplexStatus' in interfaces[interface]:
-                interfaces[interface]['dot3StatsDuplexStatus'] = None
 
         logger.debug('fn=InterfaceAPI/get : %s : get vmVlan' % devicename)
         for index, vlan_id in m.vmVlan.iteritems():
@@ -681,8 +677,48 @@ class InterfaceAPI(Resource):
             # only if this interface already exists (no risk after the experience with dot3StatsDuplexStatus)
             if index in interfaces:
                 interfaces[index]['vmVlanNative']['nr'] = vlan_id
-        # add a null value when an index has no entry in the vmMembershipTable table
+
+        # fill-in the voids. Some devices have empty tables for some OIDs. That would cause lookup errors
+        # below. Adding `None` entries avoid ugly stack dumps when lookup fail.
         for interface in interfaces:
+
+            # add a null value when an index has no entry in the ifName table
+            if not 'ifName' in interfaces[interface]:
+                interfaces[interface]['ifName'] = None
+
+            # missing admin-status (never seen this case)
+            if not 'ifAdminStatus' in interfaces[interface]:
+                interfaces[interface]['ifAdminStatus'] = None
+
+            # missing admin-status (never seen this case)
+            if not 'ifAdminStatus' in interfaces[interface]:
+                interfaces[interface]['ifAdminStatus'], interfaces[interface]['ifAdminStatusText'] = util.translate_status(str(None))
+
+            # missing oper-status (never seen this case)
+            if not 'ifOperStatus' in interfaces[interface]:
+                interfaces[interface]['ifOperStatus'], interfaces[interface]['ifOperStatusText'] = util.translate_status(str(None))
+
+            # missing ifType (never seen this case)
+            if not 'ifType' in interfaces[interface]:
+                interfaces[interface]['ifType'] = None
+
+            # missing ifMtu (never seen this case)
+            if not 'ifMtu' in interfaces[interface]:
+                interfaces[interface]['ifMtu'] = 0
+
+            # missing ifSpeed (never seen this case)
+            if not 'ifSpeed' in interfaces[interface]:
+                interfaces[interface]['ifSpeed'] = 0
+
+            # missing ifAlias (never seen this case)
+            if not 'ifAlias' in interfaces[interface]:
+                interfaces[interface]['ifAlias'] = None
+
+            # add a null value when an index has no entry in the dot3StatsDuplexStatus table
+            if not 'dot3StatsDuplexStatus' in interfaces[interface]:
+                interfaces[interface]['dot3StatsDuplexStatus'] = None
+
+            # add a null value when an index has no entry in the vmMembershipTable table
             if not 'vmVlanNative' in interfaces[interface]:
                 interfaces[interface]['vmVlanNative']['nr'] = None
 
@@ -694,10 +730,11 @@ class InterfaceAPI(Resource):
             interfaces[index]['index'] = index
 
             # try to map the ifDescr / ifName to a physical entity, namely the enclosing chassis
-            logger.debug('fn=InterfaceAPI/get : %s : matching interface %s (%s)' % (devicename, index, desc))
-            # 1. try ifDesc first
             desc = interfaces[index]['ifDescr']
             name = interfaces[index]['ifName']
+            logger.debug('fn=InterfaceAPI/get : %s : matching interface index=%s, desc=%s, name=%s' % (devicename, index, desc, name))
+
+            # 1. try ifDesc first
             if desc in entities_if_to_chassis:
                 interfaces[index]['physicalIndex'] = entities_if_to_chassis[desc]['chassis']
                 logger.trace('fn=InterfaceAPI/get : %s : ifDescr (%s) found in physical entities' % (devicename, desc))
