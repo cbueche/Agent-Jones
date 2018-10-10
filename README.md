@@ -31,6 +31,8 @@ Features
 - Get the interface counters of one interface.
 - Get the ARP table (MAC to IP).
 - SNMP get or walk on a OID
+- CBQoS (Class-Based Quality of Service) information for each interface.
+- command-line CBQoS parser script. 
 - Run commands over SSH
 
 
@@ -89,6 +91,23 @@ A corresponding curl command would be something like:
 If you expect any long output, you need to pass “terminal length 0” as first command. In fact, I would recommend to always pass it.
 
 [See more examples](doc/examples.md).
+
+
+command-line CBQoS parser script
+--------------------------------
+
+This script is a utility tool, not directly used within Agent-Jones. It is here to debug / visualize Cisco CBQoS configuration (if you have looked at the CISCO-CLASS-BASED-QOS-MIB, you know what I mean). See `util/qos_parser.py`. You need a virtualenv with `pysnmp` installed to run it, tested with Python 3.6.6 and 3.7.0.
+
+Cookbook:
+
+```
+python3 -m venv utilvenv
+source utilvenv/bin/activate
+pip install pysnmp
+python3 ./qos_parser.py -c community -d device -p 161 -j /tmp/output.json [-D]
+```
+
+The JSON output file is similar to what Agent-Jones provides with the `/qos/` API endpoint.
 
 
 API Documentation
