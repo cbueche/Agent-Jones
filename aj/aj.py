@@ -17,7 +17,7 @@ Repository & documentation : https://github.com/cbueche/Agent-Jones
 # -----------------------------------------------------------------------------------
 
 # update doc/RELEASES.md when touching this
-__version__ = '22.5.2017'
+__version__ = '10.10.2018'
 
 from flask import Flask, url_for, make_response, jsonify, send_from_directory, request
 from flask import render_template
@@ -35,7 +35,7 @@ from datetime import datetime
 from random import randint
 import os
 import sys
-import ConfigParser
+import configparser
 import netaddr
 from subprocess import Popen, PIPE, STDOUT
 import socket
@@ -215,7 +215,7 @@ class DeviceAPI(Resource):
             logger.trace('fn=DeviceAPI/get : %s : translate_sysoid %s' % (devicename, deviceinfo['sysObjectID']))
             (deviceinfo['hwVendor'], deviceinfo['hwModel']) = sysoidmap.translate_sysoid(deviceinfo['sysObjectID'])
 
-        except Exception, e:
+        except Exception as e:
             logger.error(
                 "fn=DeviceAPI/get : %s : SNMP get of generic aspects for device failed : %s" % (devicename, e))
             return errst.status('ERROR_OP', 'SNMP get of generic aspects failed on %s, cause : %s' % (devicename, e)), 200
@@ -233,7 +233,7 @@ class DeviceAPI(Resource):
             deviceinfo['pethMainPsePower'] = poe_modules
             logger.debug('fn=DeviceAPI/get : %s : poe info collection ok' % devicename)
 
-        except Exception, e:
+        except Exception as e:
             # POE is not that important, do not generate errors for it
             logger.info(
                 "fn=DeviceAPI/get : %s : SNMP get for POE aspects for device failed : %s" % (devicename, e))
@@ -266,11 +266,11 @@ class DeviceAPI(Resource):
                     'fn=DeviceAPI/get_serial cswSwitchNumCurrent entry %s, %s' % (
                     index, value))
                 counter += 1
-        except snmp.SNMPException, e:
+        except snmp.SNMPException as e:
             logger.info(
                 "fn=DeviceAPI/get_serial : %s : SNMPException in get_serial/get-cswSwitchNumCurrent : <%s>" % (
                 devicename, e))
-        except Exception, e:
+        except Exception as e:
             logger.info(
                 "fn=DeviceAPI/get_serial : %s : Exception in get_serial/get-cswSwitchNumCurrent : <%s>" % (
                 devicename, e))
@@ -294,18 +294,18 @@ class DeviceAPI(Resource):
                         'physicalName':         m.entPhysicalName[index],
                         'physicalClass':        re.sub(class_regex, '', str(m.entPhysicalClass[index]))
                     })
-        except snmp.SNMPException, e:
+        except snmp.SNMPException as e:
             logger.info(
                 "fn=DeviceAPI/get_serial : %s : SNMPException in get_serial/get-entPhysicalClass : <%s>" % (
                 devicename, e))
-        except Exception, e:
+        except Exception as e:
             logger.info(
                 "fn=DeviceAPI/get_serial : %s : Exception in get_serial/get-entPhysicalClass : <%s>" % (
                 devicename, e))
 
         # found something ?
         if len(hardware_info) == 0:
-            logger.warn("fn=DeviceAPI/get_serial : %s : could not get an entity parent" % devicename)
+            logger.warning("fn=DeviceAPI/get_serial : %s : could not get an entity parent" % devicename)
         else:
             logger.debug("fn=DeviceAPI/get_serial : %s : got %s serial(s)" % (devicename, len(hardware_info)))
 
@@ -370,15 +370,15 @@ class DeviceActionAPI(Resource):
                 stderr = '' if stderr is None else stderr.encode('utf-8')
                 logger.debug('fn=DeviceActionAPI/post : %s : rc=<%s>, stdout=<%s>, stderr=<%s>' %
                              (devicename, rc, stdout, stderr))
-            except Exception, e:
+            except Exception as e:
                 logger.error(
                     "fn=DeviceActionAPI/post : %s : ping action failed : %s" % (devicename, e))
                 return errst.status('ERROR_OP', 'ping action for %s failed, cause : %s' % (devicename, e)), 200
 
             deviceinfo['status'] = 'failed' if rc else 'ok'
             deviceinfo['rc'] = rc
-            deviceinfo['stdout'] = stdout
-            deviceinfo['stderr'] = stderr
+            deviceinfo['stdout'] = util.to_str(stdout)
+            deviceinfo['stderr'] = util.to_str(stderr)
 
         else:
             return errst.status('ERROR_OP', 'unknown action <%s>' % action), 200
@@ -497,7 +497,7 @@ class DeviceSaveAPI(Resource):
                 "fn=DeviceSaveAPI/put : %s : operation %d : clear operation" % (devicename, opidx))
             m.ccCopyEntryRowStatus[opidx] = 6
 
-        except Exception, e:
+        except Exception as e:
             logger.error(
                 "fn=DeviceSaveAPI/put : %s : copy failed : %s" % (devicename, e))
             return errst.status('ERROR_OP', 'config save for %s failed, cause : %s' % (devicename, e)), 200
@@ -859,6 +859,7 @@ class InterfaceAPI(Resource):
             interfaces_array.append(interfaces[index])
 
         deviceinfo['interfaces'] = interfaces_array
+        deviceinfo['count'] = len(interfaces_array)
 
         tend = datetime.now()
         tdiff = tend - tstart
@@ -941,7 +942,7 @@ class InterfaceAPI(Resource):
 
             logger.info('fn=InterfaceAPI/get_poe : %s : got %s poe entries' % (devicename, poe_entries))
 
-        except Exception, e:
+        except Exception as e:
             logger.info("fn=InterfaceAPI/get_poe : %s : could not get poe info, probably a device without POE. Status : %s" % (devicename, e))
 
         tend = datetime.now()
@@ -1031,7 +1032,7 @@ class InterfaceAPI(Resource):
         logger.info('fn=InterfaceAPI/merge_entities : %s : start merge entities' % devicename)
 
         merged_entities = autovivification.AutoVivification()
-        for idx, value in entities['entries_entPhysicalClass'].iteritems():
+        for idx, value in entities['entries_entPhysicalClass'].items():
             logger.trace('fn=InterfaceAPI/merge_entities : %s : merging index %s of class %s' % (devicename, idx, value))
             merged_entities[idx]['class'] = value
             merged_entities[idx]['name'] = entities['entries_entPhysicalName'].get(idx, None)
@@ -1052,7 +1053,7 @@ class InterfaceAPI(Resource):
         logger.info('fn=InterfaceAPI/get_ports : %s : get_ports' % devicename)
 
         port_table = autovivification.AutoVivification()
-        for idx, entry in merged_entities.iteritems():
+        for idx, entry in merged_entities.items():
             # only ports
             if entry['class'] == 10:  # entPhysicalClass=10 are ports (interfaces of some sort)
                 logger.trace('fn=InterfaceAPI/get_ports : %s : searching for port %s' % (devicename, entry['name']))
@@ -1158,7 +1159,7 @@ class InterfaceCounterAPI(Resource):
 
             deviceinfo['counters'] = counters
 
-        except Exception, e:
+        except Exception as e:
             logger.error(
                 "fn=InterfaceCounterAPI/get : %s : SNMP get failed : %s" % (devicename, e))
             return errst.status('ERROR_OP', 'SNMP get failed on %s, cause : %s' % (devicename, e)), 200
@@ -1220,7 +1221,7 @@ class MacAPI(Resource):
                 entry["macs"] = macs[ifindex]
                 macs_organized.append(entry)
 
-        except snmp.SNMPException, e:
+        except snmp.SNMPException as e:
             logger.error("fn=MacAPI/get : %s : SNMP get failed : %s" %
                          (devicename, e))
             return errst.status('ERROR_OP', 'SNMP get failed on %s, cause : %s' % (devicename, e)), 200
@@ -1318,13 +1319,13 @@ class MacAPI(Resource):
 
                             try:
                                 ifindex = dot1dBasePortIfIndex[port]
-                            except Exception, e:
+                            except Exception as e:
                                 logger.debug("fn=MacAPI/get_macs_from_device : %s : port=%s, mac_entry_idx lookup failed : %s" % (devicename, port, e))
 
                             try:
                                 mac = netaddr.EUI(mac_entry)
                                 vendor = mac.oui.registration().org
-                            except Exception, e:
+                            except Exception as e:
                                 logger.trace("fn=MacAPI/get_macs_from_device : %s : vendor lookup failed : %s" % (devicename, e))
                                 vendor = 'unknown'
 
@@ -1408,7 +1409,7 @@ class CDPAPI(Resource):
                 entry["cdpCacheLastChange"] = cdps[ifindex]['cdpCacheLastChange']
                 cdps_organized.append(entry)
 
-        except snmp.SNMPException, e:
+        except snmp.SNMPException as e:
             logger.error("fn=CDPAPI/get : %s : SNMP get failed : %s" % (devicename, e))
             return errst.status('ERROR_OP', 'SNMP get failed on %s, cause : %s' % (devicename, e)), 200
 
@@ -1440,7 +1441,7 @@ class CDPAPI(Resource):
                     cdps[index[0]]['cdpCacheAddressType'] = 'ipv6'
                 else:
                     cdps[index[0]]['cdpCacheAddressType'] = 'unsupported' % value
-                    logger.warn('fn=CDPAPI/get_cdp_from_device : %s : unsupported cdpCacheAddressType <%s>' % (devicename, value))
+                    logger.warning('fn=CDPAPI/get_cdp_from_device : %s : unsupported cdpCacheAddressType <%s>' % (devicename, value))
 
             logger.debug('fn=CDPAPI/get_cdp_from_device : %s : get cdpCacheAddress' % devicename)
             for index, value in m.cdpCacheAddress.iteritems():
@@ -1466,8 +1467,8 @@ class CDPAPI(Resource):
             for index, value in m.cdpCacheLastChange.iteritems():
                 cdps[index[0]]['cdpCacheLastChange'] = value
 
-        except snmp.SNMPException, e:
-            logger.warn("fn=CDPAPI/get_cdp_from_device : failed SNMP get for CDP : %s" % e)
+        except snmp.SNMPException as e:
+            logger.warning("fn=CDPAPI/get_cdp_from_device : failed SNMP get for CDP : %s" % e)
 
         return cdps
 
@@ -1511,7 +1512,7 @@ class TrunkAPI(Resource):
 
             trunks = self.get_trunks_from_device(devicename, m)
 
-        except snmp.SNMPException, e:
+        except snmp.SNMPException as e:
             logger.error("fn=TrunkAPI/get : %s : SNMP get failed : %s" %
                          (devicename, e))
             return errst.status('ERROR_OP', 'SNMP get failed on %s, cause : %s' % (devicename, e)), 200
@@ -1543,8 +1544,8 @@ class TrunkAPI(Resource):
                 logger.trace("fn=TrunkAPI/get_trunks_from_device/2 : trunk : %s, %s" % (index, value))
                 trunks[index]['trunkOperState'] = str(value)
 
-        except snmp.SNMPException, e:
-            logger.warn("fn=TrunkAPI/get_trunks_from_device : failed SNMP get for Trunks : %s" % e)
+        except snmp.SNMPException as e:
+            logger.warning("fn=TrunkAPI/get_trunks_from_device : failed SNMP get for Trunks : %s" % e)
 
         logger.debug("fn=TrunkAPI/get_trunks_from_device : returning data : %s trunks entries found" % len(trunks))
         return trunks
@@ -1588,7 +1589,7 @@ class ARPAPI(Resource):
             deviceinfo['sysName'] = m.sysName
             oid_used, nbr_arp_entries, arps = self.get_arp_from_device(devicename, m)
 
-        except snmp.SNMPException, e:
+        except snmp.SNMPException as e:
             logger.error("fn=ARPAPI/get : %s : SNMP get failed : %s" % (devicename, e))
             return errst.status('ERROR_OP', 'SNMP get failed on %s, cause : %s' % (devicename, e)), 200
 
@@ -1626,11 +1627,11 @@ class ARPAPI(Resource):
             nbr_of_entries = i
             logger.info("fn=ARPAPI/get_arp_from_device : %s : got %s ARP entries" % (devicename, nbr_of_entries))
 
-        except snmp.SNMPException, e:
+        except snmp.SNMPException as e:
             if str(e) == 'no more stuff after this OID':
                 logger.info('fn=ARPAPI/get_arp_from_device : %s : empty results, probably unsupported OID: %s' % (devicename, e))
             else:
-                logger.warn('fn=ARPAPI/get_arp_from_device : %s : %s' % (devicename, e))
+                logger.warning('fn=ARPAPI/get_arp_from_device : %s : %s' % (devicename, e))
 
         # success, do not try deprecated MIB/OID below
         if nbr_of_entries > 0:
@@ -1657,8 +1658,8 @@ class ARPAPI(Resource):
             nbr_of_entries = i
             logger.info("fn=ARPAPI/get_arp_from_device : %s : got %s ARP entries" % (devicename, nbr_of_entries))
 
-        except snmp.SNMPException, e:
-            logger.warn('fn=ARPAPI/get_arp_from_device : %s : %s' % (devicename, e))
+        except snmp.SNMPException as e:
+            logger.warning('fn=ARPAPI/get_arp_from_device : %s : %s' % (devicename, e))
 
         # possible enhancement: if both ipNetToPhysicalPhysAddress and ipNetToMediaPhysAddress
         # bring empty results, 1.3.6.1.2.1.3.1 (RFC1213-MIB) might do the job.
@@ -1706,7 +1707,7 @@ class DHCPsnoopAPI(Resource):
             deviceinfo['sysName'] = m.sysName
             deviceinfo['dhcpsnoop'] = self.get_dhcp_snooping_from_device(devicename, m)
 
-        except snmp.SNMPException, e:
+        except snmp.SNMPException as e:
             logger.error(
                 "fn=DHCPsnoopAPI/get : %s : SNMP get failed : %s" % (devicename, e))
             return errst.status('ERROR_OP', 'SNMP get failed on %s, cause : %s' % (devicename, e)), 200
@@ -1748,36 +1749,43 @@ class DHCPsnoopAPI(Resource):
 
             logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s : get cdsBindingsAddrType' % devicename)
             cdsBindingsAddrType = {}
-            for index, value in m.cdsBindingsAddrType.iteritems():
+            for index, value in m.cdsBindingsAddrType.items():
                 cdsBindingsAddrType[index] = value
+            logger.trace('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s : got %s entries' % (devicename, len(cdsBindingsAddrType)))
 
             logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s : get cdsBindingsIpAddress' % devicename)
             cdsBindingsIpAddress = {}
             for index, value in m.cdsBindingsIpAddress.iteritems():
                 cdsBindingsIpAddress[index] = value
+            logger.trace('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s : got %s entries' % (devicename, len(cdsBindingsIpAddress)))
 
             logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s : get cdsBindingsInterface' % devicename)
             cdsBindingsInterface = {}
             for index, value in m.cdsBindingsInterface.iteritems():
                 cdsBindingsInterface[index] = value
+            logger.trace('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s : got %s entries' % (devicename, len(cdsBindingsInterface)))
 
             logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s : get cdsBindingsLeasedTime' % devicename)
             cdsBindingsLeasedTime = {}
             for index, value in m.cdsBindingsLeasedTime.iteritems():
                 cdsBindingsLeasedTime[index] = value
+            logger.trace('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s : got %s entries' % (devicename, len(cdsBindingsLeasedTime)))
 
             logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s : get cdsBindingsStatus' % devicename)
             cdsBindingsStatus = {}
             for index, value in m.cdsBindingsStatus.iteritems():
                 cdsBindingsStatus[index] = value
+            logger.trace('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s : got %s entries' % (devicename, len(cdsBindingsStatus)))
 
             logger.debug('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s : get cdsBindingsHostname' % devicename)
             cdsBindingsHostname = {}
             for index, value in m.cdsBindingsHostname.iteritems():
                 cdsBindingsHostname[index] = value
+            logger.trace('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : %s : got %s entries' % (devicename, len(cdsBindingsHostname)))
 
             # now loop over the entries and merge the diverse tables
             dhcp_snooping_entries = []
+            #logger.trace('cdsBindingsAddrType records = %s' % cdsBindingsAddrType)
             for index in cdsBindingsAddrType:
                 vlan = int(index[0])
                 mac = str(index[1])
@@ -1788,13 +1796,13 @@ class DHCPsnoopAPI(Resource):
                 try:
                     vendor = mac_e.oui.registration().org
                 except netaddr.NotRegisteredError as e:
-                    logger.warn('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device: %s : error %s : unknown vendor for %s' % (devicename, e, mac_f))
+                    logger.warning('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device: %s : error %s : unknown vendor for %s' % (devicename, e, mac_f))
                     vendor = 'unknown'
-                address_type = inet_address_types.get(cdsBindingsAddrType[index], 'unsupported')
+                address_type = inet_address_types.get(int(cdsBindingsAddrType[index]), 'unsupported')
                 ip = util.convert_ip_from_snmp_format(address_type, cdsBindingsIpAddress[index])
                 interface_idx = cdsBindingsInterface[index]
                 leased_time = cdsBindingsLeasedTime[index]
-                status = binding_status.get(cdsBindingsStatus[index], 'unsupported')
+                status = binding_status.get(int(cdsBindingsStatus[index]), 'unsupported')
                 hostname = cdsBindingsHostname.get(index, None)
 
                 logger.trace('fn=DHCPsnoopAPI/get_dhcp_snooping_from_device %s : vlan=%s, mac=%s, vendor=%s, address_type=%s, ip=%s, interface_idx=%s, leased_time=%s, status=%s, hostname=%s' %
@@ -1811,8 +1819,8 @@ class DHCPsnoopAPI(Resource):
                               }
                 dhcp_snooping_entries.append(dhcp_entry)
 
-        except snmp.SNMPException, e:
-            logger.warn("fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : failed SNMP get for DHCP snooping : %s" % e)
+        except snmp.SNMPException as e:
+            logger.warning("fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : failed SNMP get for DHCP snooping : %s" % e)
 
         logger.debug("fn=DHCPsnoopAPI/get_dhcp_snooping_from_device : returning data : %s entries found" % len(dhcp_snooping_entries))
         return dhcp_snooping_entries
@@ -1871,7 +1879,7 @@ class vlanlistAPI(Resource):
                 vlans.append(vlan)
             deviceinfo['vlans'] = vlans
 
-        except Exception, e:
+        except Exception as e:
             logger.error(
                 "fn=vlanlistAPI/get : %s : SNMP get failed : %s" % (devicename, e))
             return errst.status('ERROR_OP', 'SNMP get failed on %s, cause : %s' % (devicename, e)), 200
@@ -1921,7 +1929,7 @@ class vlanlistAPI(Resource):
                 logger.trace('fn=vlanlistAPI/get_voice_vlans : %s : got voice vlan %s for index %s' % (devicename, value, index))
                 voice_vlans[index] = str(value)
 
-        except Exception, e:
+        except Exception as e:
             logger.info("fn=vlanlistAPI/get_voice_vlans : %s : SNMP get failed : %s" % (devicename, e))
 
         return voice_vlans
@@ -1981,7 +1989,7 @@ class PortToVlanAPI(Resource):
             # assign the vlan to the port
             m.vmVlan[ifindex] = vlan
 
-        except Exception, e:
+        except Exception as e:
             logger.error(
                 "fn=PortToVlanAPI/get : %s : SNMP get failed : %s" % (devicename, e))
             return errst.status('ERROR_OP', 'SNMP get failed on %s, cause : %s' % (devicename, e)), 200
@@ -2061,7 +2069,7 @@ class InterfaceConfigAPI(Resource):
                 logger.debug(
                     'fn=InterfaceConfigAPI/put : %s : set ifAlias' % devicename)
                 m.ifAlias[ifindex] = ifAlias
-        except Exception, e:
+        except Exception as e:
             logger.error(
                 "fn=InterfaceConfigAPI/put : %s : interface configuration failed : %s" % (devicename, e))
             return errst.status('ERROR_OP', 'interface configuration failed : %s' % e), 200
@@ -2120,7 +2128,7 @@ class OIDpumpAPI(Resource):
             try:
                 logger.debug('fn=OIDpumpAPI/get : %s : SNMP get on %s' % (devicename, oid))
                 data = session.get(str(oid))
-            except Exception, e:
+            except Exception as e:
                 logger.error("fn=OIDpumpAPI/get : %s : oid get failed: %s" % (devicename, e))
                 return errst.status('ERROR_SNMP_OP', 'oid get failed: %s' % e), 200
 
@@ -2128,7 +2136,7 @@ class OIDpumpAPI(Resource):
             try:
                 logger.debug('fn=OIDpumpAPI/get : %s : SNMP walk on %s' % (devicename, oid))
                 data = session.walkmore(str(oid))
-            except Exception, e:
+            except Exception as e:
                 logger.error("fn=OIDpumpAPI/get : %s : oid walk failed: %s" % (devicename, e))
                 return errst.status('ERROR_SNMP_OP', 'oid walk failed: %s' % e), 200
 
@@ -2197,7 +2205,7 @@ class DeviceSshAPI(Resource):
                      (request.remote_addr, args['CmdList']))
         try:
             cmdlist = loads(args['CmdList'])
-        except Exception, e:
+        except Exception as e:
             logger.error("fn=DeviceSshAPI/put : %s : %s : device configuration failed : cmds list is no valid JSON. Received CmdList = <%s>" %
                          (devicename, e, args['CmdList']))
             return errst.status('ERROR_OP', 'device configuration failed : cmds list is no valid JSON : %s. Try with something like this without the backslashes : ["terminal length 0", "show users", "show version"]' % e), 500
@@ -2257,12 +2265,12 @@ app = Flask(__name__)
 # -----------------------------------------------------------------------------------
 
 try:
-    envconfig = ConfigParser.ConfigParser()
+    envconfig = configparser.ConfigParser()
     envfile = os.path.join(app.root_path, 'etc/environment.conf')
     envconfig.read(envfile)
     environment = envconfig.get('main', 'environment')
-except Exception, e:
-    print "FATAL, cannot read environment from %s: %s" % (envfile, e)
+except Exception as e:
+    print("FATAL, cannot read environment from %s: %s" % (envfile, e))
     sys.exit(1)
 
 if environment == 'PROD':
@@ -2272,7 +2280,7 @@ elif environment == 'INT':
 elif environment == 'DEV':
     app.config.from_object('config.DevelopmentConfig')
 else:
-    print "FATAL ERROR: environment must be set in etc/environment.conf"
+    print("FATAL ERROR: environment must be set in etc/environment.conf")
     sys.exit(1)
 
 

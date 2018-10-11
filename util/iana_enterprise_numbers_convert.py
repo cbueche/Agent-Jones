@@ -16,7 +16,7 @@
 # --------------------------------------------------------------------------------
 
 
-from optparse import OptionParser
+import argparse
 import sys
 import os
 import re
@@ -30,12 +30,12 @@ def main():
 # --------------------------------------------------------------------------------
 
     # script parameters
-    print "Start"
-    parser = OptionParser()
-    parser.add_option("-i", "--input", dest="input", default="", help="input in URL format. Can be file:///tmp/enterprise-numbers or http://www.iana.org/assignments/enterprise-numbers")
-    parser.add_option("-o", "--output", dest="output", default="", help="output file, eg ./enterprise-numbers.json")
-    parser.add_option("-d", "--debug", action="store_true", help="Print debug information")
-    (params, args) = parser.parse_args()
+    print("Start")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-i", "--input", dest="input", default="", help="input in URL format. Can be file:///tmp/enterprise-numbers or http://www.iana.org/assignments/enterprise-numbers")
+    parser.add_argument("-o", "--output", dest="output", default="", help="output file, eg ./enterprise-numbers.json")
+    parser.add_argument("-d", "--debug", action="store_true", help="Print debug information")
+    params = parser.parse_args()
     input_url = params.input
     output_file = params.output
 
@@ -47,15 +47,15 @@ def main():
 
     temp_file = get_from_url(input_url)
     if debug:
-        print "IF=<%s>, TMP=<%s>, OUT=<%s>" % (input_url, temp_file, output_file)
+        print("IF=<%s>, TMP=<%s>, OUT=<%s>" % (input_url, temp_file, output_file))
 
     # conversion
     entries = iana_to_json(temp_file, output_file)
-    print "found %s entries" % entries
+    print("found %s entries" % entries)
     if debug:
-        print "deleting tmp file %s" % temp_file
+        print("deleting tmp file %s" % temp_file)
     os.unlink(temp_file)
-    print "End"
+    print("End")
 
 
 # --------------------------------------------------------------------------------
@@ -66,7 +66,7 @@ def iana_to_json(temp_file, output_file):
     try:
         fp = open(temp_file, 'r')
     except (IOError, OSError) as e:
-        print "ERROR : cannot open input file, exit : %s" % e
+        print("ERROR : cannot open input file, exit : %s" % e)
         sys.exit(1)
 
     # header parsing
@@ -83,21 +83,21 @@ def iana_to_json(temp_file, output_file):
         # check for the usual IANA header in 1st line
         if re.search(r'PRIVATE ENTERPRISE NUMBERS', line):
             if debug:
-                print "found header"
+                print("found header")
 
         # last updated stamp
         regex = re.compile(r'\(last updated (\d{4}-\d{2}-\d{2})\)')
         match = regex.search(line)
         if match:
             last_update = match.group(1)
-            print "updated = %s" % last_update
+            print("updated = %s" % last_update)
 
         # stop right before the data records
         if line == '| | | |':
             break
 
     if debug:
-        print "header done"
+        print("header done")
 
     # and now the data
     # -------------------------------------
@@ -151,11 +151,11 @@ def iana_to_json(temp_file, output_file):
                 enterprises[decimal] = {'o': organization, 'c': contact, 'e': email}
 
             if debug:
-                print "found footer, exit read loop"
+                print("found footer, exit read loop")
             break
 
     fp.close
-    print ''
+    print('')
 
     # write data structure to output file
     with open(output_file, 'w') as of:
@@ -169,7 +169,7 @@ def analyze_block(block):
 # --------------------------------------------------------------------------------
 
     if debug:
-        print "analyzing block %s" % block
+        print("analyzing block %s" % block)
 
     decimal = 0
     organization = ''
@@ -180,20 +180,20 @@ def analyze_block(block):
     if re.search(r'^\d+$', block[0]):
         decimal = block[0]
     else:
-        print "ERROR: first element of block is not a valid decimal"
+        print("ERROR: first element of block is not a valid decimal")
         return False, -1, 'na', 'na', 'na'
 
     # now loop over the other elements
     last_element_found = ''
     for element in block[1:]:
         if debug:
-            print "working on element <%s>" % element
+            print("working on element <%s>" % element)
 
         # get line addition
         # any non-blank text starting at beginning of line, but not a number
         if re.search(r'^[^\d\s]', element):
             if debug:
-                print "line continuation"
+                print("line continuation")
             if last_element_found == 'organization':
                 organization = organization + ' ' + element
             elif last_element_found == 'contact':
@@ -201,7 +201,7 @@ def analyze_block(block):
             elif last_element_found == 'email':
                 email = email + ' ' + element
             else:
-                print "ERROR: don't know how to add this line to unknown block element"
+                print("ERROR: don't know how to add this line to unknown block element")
                 return False, -1, 'na', 'na', 'na'
             continue
 
@@ -225,7 +225,7 @@ def analyze_block(block):
 
         # something after email, shall not happen
         if last_element_found == 'email':
-            print "ERROR: nothing should come after the email element"
+            print("ERROR: nothing should come after the email element")
             continue
 
     return True, decimal, clean(organization), clean(contact), clean(email)
@@ -245,7 +245,7 @@ def get_from_url(url):
 # --------------------------------------------------------------------------------
 
     tmp = tempfile.NamedTemporaryFile(prefix = 'iana_en_', suffix = '.tmp', delete = False)
-    print "reading from %s" % url
+    print("reading from %s" % url)
     urldata = urllib2.urlopen(url)
     while True:
         line = urldata.readline()

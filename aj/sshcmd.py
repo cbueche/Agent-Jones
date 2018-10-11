@@ -83,7 +83,7 @@ class SshCmd():
         elif driver == 'vrp':
             from Exscript.protocols.drivers import vrp
         else:
-            self.logger.warn('invalid driver=%s' % driver)
+            self.logger.warning('invalid driver=%s' % driver)
             return (2, 'invalid driver, please check list from http://knipknap.github.io/exscript/api/Exscript.protocols.drivers-module.html', [])
 
         output_global = ''
@@ -102,8 +102,8 @@ class SshCmd():
                 output_global = output_global + conn.response
                 output_indexed.append({command: conn.response})
 
-        except Exception, e:
-            self.logger.warn('fn=sshcmd/run_by_ssh : %s : failure : output_indexed is %s, output_global=%s' % (device, output_indexed, output_global))
+        except Exception as e:
+            self.logger.warning('fn=sshcmd/run_by_ssh : %s : failure : output_indexed is %s, output_global=%s' % (device, output_indexed, output_global))
             return (1, e, output_indexed)
 
         # sometimes sending "exit" produce a close before we can explicitely do it ourselves

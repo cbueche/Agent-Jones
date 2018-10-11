@@ -34,7 +34,7 @@ class Utilities():
         if status in status_map:
             return status_map[status]
         else:
-            logger.warn("could not translate status <%s>" % status)
+            logger.warning("could not translate status <%s>" % status)
             return [status, status]
 
 
@@ -47,5 +47,21 @@ class Utilities():
         elif address_type == 'dns':
             return ip_address
         else:
-            logger.warn('IP conversion not yet supported for type %s, ip %s' % (address_type, ip_address))
+            logger.warning('IP conversion not yet supported for type %s, ip %s' % (address_type, ip_address))
             return 'IP conversion not yet supported for type %s, ip %s' % (address_type, ip_address)
+
+
+    # for Python 3 port, source https://stackoverflow.com/questions/7585435/best-way-to-convert-string-to-bytes-in-python-3/46037362#46037362
+    def to_bytes(self, bytes_or_str):
+        if isinstance(bytes_or_str, str):
+            value = bytes_or_str.encode()  # uses 'utf-8' for encoding
+        else:
+            value = bytes_or_str
+        return value  # Instance of bytes
+
+    def to_str(self, bytes_or_str):
+        if isinstance(bytes_or_str, bytes):
+            value = bytes_or_str.decode()  # uses 'utf-8' for encoding
+        else:
+            value = bytes_or_str
+        return value  # Instance of str

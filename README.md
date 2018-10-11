@@ -11,7 +11,8 @@ The whole stuff is written in Python, using the [Flask](http://flask.pocoo.org/)
 Status
 ------
 
-It is deployed in a network with about 1'000 devices, WAN and LAN, routers and switches, all Cisco. It works, but I would gladly accept patches and enhancements.
+- Version `22.5.2017` with Python 2.x is cosidered stable, and deployed on at least 3 major networks with 1'000+ devices, WAN and LAN, routers and switches, all Cisco.
+- Version `10.10.2018` with Python 3.x should be considered as beta, because I could not try every case. Especially the "write-functions" haven't been tested. Get in touch if you see an issue.
 
 
 Features
@@ -126,7 +127,7 @@ Dependencies
 ------------
 
 - works as a virtualenv to protect your instance from courageaous system-admins using OS-upgrade without too much knowledge.
-- python 2.7 (might work for 2.6)
+- python 3.7 (might work for older 3.x versions if you get the dependencies installed)
 
 
 Extension / development

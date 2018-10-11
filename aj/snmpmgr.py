@@ -105,8 +105,8 @@ class SNMPmgr():
                   cache=cache,
                   bulk=bulk,
                   none=none)
-        except Exception, e:
-            self.logger.warn('fn=SNMPmgr/create : %s : cannot create SNMP manager : <%s>' % (devicename, e))
+        except Exception as e:
+            self.logger.warning('fn=SNMPmgr/create : %s : cannot create SNMP manager : <%s>' % (devicename, e))
             return None, str(e)
 
         self.logger.debug('fn=SNMPmgr/create : %s : returning manager' % (devicename))
