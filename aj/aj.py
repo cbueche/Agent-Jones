@@ -65,6 +65,7 @@ import sysoidan
 import entity_vendortype
 import sshcmd
 import snmpmgr
+import qos
 
 # Snimpy SNMP lib and MIB loading
 from snimpy.manager import Manager as M
@@ -127,7 +128,7 @@ load(mib_path + "RFC1213-MIB.my")
 load(mib_path + "RFC1271-MIB.my")
 load(mib_path + "TOKEN-RING-RMON-MIB.my")
 load(mib_path + "RMON2-MIB.my")
-load(mib_path + "Q-BRIDGE.my")
+load(mib_path + "Q-BRIDGE-MIB.my")
 load(mib_path + "CISCO-DHCP-SNOOPING-MIB.my")
 
 # ARP
@@ -135,6 +136,14 @@ load(mib_path + "IP-MIB.my")
 
 # VendorType matching
 load(mib_path + "CISCO-ENTITY-VENDORTYPE-OID-MIB.my")
+
+# Cisco QoS
+#load(mib_path + "RFC1213-MIB.my")
+load(mib_path + "RFC1215-MIB.my")
+load(mib_path + "RFC1315-MIB.my")
+load(mib_path + "CISCO-FRAME-RELAY-MIB.my")
+load(mib_path + "HCNUM-TC.my")
+load(mib_path + "CISCO-CLASS-BASED-QOS-MIB.my")
 
 
 # -----------------------------------------------------------------------------------
@@ -2255,6 +2264,55 @@ class DeviceSshAPI(Resource):
 
 
 # -----------------------------------------------------------------------------------
+# GET QoS info from a device/interface
+# -----------------------------------------------------------------------------------
+class QoSAPI(Resource):
+    __doc__ = '''{
+        "name": "QoSAPI",
+        "description": "GET Cisco cbQoS info from a device",
+        "auth": true,
+        "auth-type": "BasicAuth",
+        "params": [],
+        "returns": "A list of QoS entries per interface."
+    }'''
+
+    @auth.login_required
+    def get(self, devicename):
+        # -------------------------
+        logger.debug('fn=QoSAPI/get : src=%s, %s' % (request.remote_addr, devicename))
+        logaction(classname='QoSAPI', methodname='get', devicename=devicename,
+                  src_ip=request.remote_addr, src_user=auth.username())
+        tstart = datetime.now()
+        deviceinfo = autovivification.AutoVivification()
+        deviceinfo['name'] = devicename
+
+        logger.debug('fn=QoSAPI/get : %s : requesting a SNMP manager' % (devicename))
+        m, errors = snimpy.create(devicename=devicename)
+
+        if m is None:
+            return errst.status('ERROR_SNMP_MGR', errors), 200
+
+        if not check.check_snmp(m, devicename, 'RO'):
+            return errst.status('ERROR_SNMP', 'SNMP test failed'), 200
+
+        meta, interfaces = qoscollector.collect(m, devicename)
+
+        tend = datetime.now()
+        tdiff = tend - tstart
+        duration = (tdiff.microseconds + (tdiff.seconds +
+                                          tdiff.days * 24 * 3600) * 10**6) / 1000
+        deviceinfo['query-duration'] = duration
+        deviceinfo['interfaces'] = interfaces
+        deviceinfo['count'] = len(interfaces)
+        deviceinfo['meta'] = meta
+
+        logger.info('fn=QoSAPI/get : %s : duration=%s' %
+                    (devicename, deviceinfo['query-duration']))
+        return deviceinfo
+
+
+
+# -----------------------------------------------------------------------------------
 # instantiate the Flask application and the REST api
 # -----------------------------------------------------------------------------------
 app = Flask(__name__)
@@ -2442,6 +2500,11 @@ doc.add(loads(ARPAPI.__doc__),
         '/aj/api/v1/arp/<string:devicename>',
         ARPAPI.__dict__['methods'])
 
+api.add_resource(QoSAPI,
+                 '/aj/api/v1/qos/<string:devicename>')
+doc.add(loads(QoSAPI.__doc__),
+        '/aj/api/v1/qos/<string:devicename>',
+        QoSAPI.__dict__['methods'])
 
 # -----------------------------------------------------------------------------------
 # auto-doc for API
@@ -2483,6 +2546,9 @@ commander = sshcmd.SshCmd(logger)
 
 # for SNMP traffic
 snimpy = snmpmgr.SNMPmgr(logger, app, credmgr)
+
+# for QOS collection
+qoscollector = qos.QOScollector(app)
 
 
 # -----------------------------------------------------------------------------------

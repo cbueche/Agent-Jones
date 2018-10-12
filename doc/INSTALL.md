@@ -28,6 +28,10 @@ It will fail with `ImportError: No module named credentials`. It's a sign of suc
 
 Agent-Jones is a WSGI service within Apache, see the files in deployment/ and the WSGI documentation [here](https://github.com/GrahamDumpleton/mod_wsgi) and [here](http://modwsgi.readthedocs.io/en/develop/).
 
+## if you get StopIteration exception
+
+snimpy 0.8.12 wasn't supporting Python 2.7. Fixed soon, or [patch](https://github.com/vincentbernat/snimpy/issues/83) manager.py manually.
+
 Platform-specific notes
 -----------------------
 
