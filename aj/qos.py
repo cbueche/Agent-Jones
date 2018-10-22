@@ -212,7 +212,7 @@ class QOScollector():
             qos_interface_idx = cbQosServicePolicyTable[cbQosPolicyIndex]['cbQosIfIndex']
             # only for real interfaces, see InterfaceType in CISCO-CLASS-BASED-QOS-MIB for other values
             qos_interface_type = cbQosServicePolicyTable[cbQosPolicyIndex]['cbQosIfType']
-            if qos_interface_type == '1':
+            if qos_interface_type == "1":
                 interface_name = ifEntriesTable.get(qos_interface_idx, 'noNameInterface')
                 interfaces[qos_interface_idx] = interface_name
             else:
@@ -232,6 +232,7 @@ class QOScollector():
         InterfacesTable = {}
         for idx in cbQosServicePolicyTable:
             (interface_idx, interface_name) = self.get_interface(idx, cbQosServicePolicyTable, interfaces)
+            self.logger.debug('InterfacesTable list build : name = <%s>' % (interface_name))
             if interface_name:
                 InterfacesTable[interface_name] = []
         for idx in cbQosServicePolicyTable:
@@ -418,6 +419,7 @@ class QOScollector():
 
             # each interface
             interface_name = interfaces[interface_idx]
+            self.logger.debug("presentation: working on interface <%s>" % interface_name)
 
             # for each service-policy bound to the current interface
             for ObjectsTable_idx in sorted(InterfacesTable[interface_name]):
@@ -577,6 +579,9 @@ class QOScollector():
             oid = '.'.join(map(str, entry[0]))
             if type(entry[1]) == tuple:
                 value = '.'.join(map(str, entry[1]))
+            elif type(entry[1]) == bytes:
+                # SNMP bytes to Python 3 string
+                value = entry[1].decode('utf-8')
             else:
                 value = str(entry[1])
             entries[oid] = value
@@ -613,7 +618,12 @@ class QOScollector():
         for ifEntry in list(ifEntries.keys()):
             array = ifEntry.split('.')
             ifEntryIndex = array[10]
-            ifEntriesTable[ifEntryIndex] = ifEntries[ifEntry]
+            ifDescr = ifEntries[ifEntry]
+            #self.logger.debug('1. idx=%s, desc=%s' % (ifEntryIndex, ifDescr))
+            # Python 3, SNMP bytes to str
+            #ifDescr = ifDescr.decode('utf-8')
+            self.logger.debug('2. idx=%s, desc=%s' % (ifEntryIndex, ifDescr))
+            ifEntriesTable[ifEntryIndex] = ifDescr
 
         return ifEntriesTable
 
@@ -713,7 +723,10 @@ class QOScollector():
     def get_interface(self, idx, cbQosServicePolicyTable, interfaces):
 
         interface_idx = cbQosServicePolicyTable[idx]['cbQosIfIndex']
-        interface_name = interfaces.get(interface_idx, None)
+        if interface_idx in interfaces:
+            interface_name = interfaces[interface_idx] #.decode('utf-8')
+        else:
+            interface_name = None
         return (interface_idx, interface_name)
 
     # ---------------------------------------------------------------------------------------
