@@ -12,7 +12,7 @@ Status
 ------
 
 - Version `22.5.2017` with Python 2.x is cosidered stable, and deployed on at least 3 major networks with 1'000+ devices, WAN and LAN, routers and switches, all Cisco.
-- Version `10.10.2018` with Python 3.x should be considered as beta, because I could not try every case. Especially the "write-functions" haven't been tested. Get in touch if you see an issue.
+- Version `10.10.2018` with Python 3.x should be considered as beta, because I could not try every case. Especially the "write-functions" haven't been tested. Get in touch if you see an issue. This version is not deployed anywhere, because the intended use (cbQoS polling on Cisco 3850) is not working (Most likely a Cisco bug).
 
 
 Features
