@@ -1,7 +1,7 @@
 Installation
 ------------
 
-Installation must be done within a [Python virtual environment](http://www.virtualenv.org/). The goal is to isolate your application from courageous system administrators running OS upgrades without thinking first. The code below is for Python 2.7 on Ubuntu.
+Installation must be done within a [Python virtual environment](http://www.virtualenv.org/). The goal is to isolate your application from courageous system administrators running OS upgrades without thinking first. The code below is for Python 3.7 on Ubuntu.
 
     git clone https://github.com/cbueche/Agent-Jones.git AJ
     cd AJ
@@ -30,7 +30,7 @@ Agent-Jones is a WSGI service within Apache, see the files in deployment/ and th
 
 ## if you get StopIteration exception
 
-snimpy 0.8.12 wasn't supporting Python 2.7. Fixed soon, or [patch](https://github.com/vincentbernat/snimpy/issues/83) manager.py manually.
+snimpy 0.8.12 wasn't supporting Python 3.7. fixed in snimpy 0.8.13, or [patch](https://github.com/vincentbernat/snimpy/issues/83) manager.py manually.
 
 Platform-specific notes
 -----------------------
