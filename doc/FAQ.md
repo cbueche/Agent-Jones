@@ -24,7 +24,7 @@ I'm getting "EntryPoint object has no attribute resolve". Update setuptools.
 ## StopIteration exception
 
 - PEP 479 seems to break ProxyIter/iteritems() in snimpy/manager.py.
-- [This patch](https://github.com/vincentbernat/snimpy/issues/83#issue-368722597) might be needed.
+- [This patch](https://github.com/vincentbernat/snimpy/issues/83#issue-368722597) is needed, fixed in snimpy 0.8.13
 
 ## Errors with MAC addresses
 

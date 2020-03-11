@@ -5,8 +5,6 @@ access_checks.py - SNMP checks
 
 Author : Ch. Bueche
 
-# FIXME : should support SNMP v1 and configurable timeout
-
 '''
 
 import logging

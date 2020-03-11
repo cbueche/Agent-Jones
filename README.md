@@ -11,9 +11,8 @@ The whole stuff is written in Python, using the [Flask](http://flask.pocoo.org/)
 Status
 ------
 
-- Version `22.5.2017` with Python 2.x is cosidered stable, and deployed on at least 3 major networks with 1'000+ devices, WAN and LAN, routers and switches, all Cisco.
-- Version `10.10.2018` with Python 3.x should be considered as beta, because I could not try every case. Especially the "write-functions" haven't been tested. Get in touch if you see an issue. This version is not deployed anywhere, because the intended use (cbQoS polling on Cisco 3850) is not working (most likely a Cisco bug).
-
+- Version `11.3.2020` with Python 3.x should be considered as beta, because I could not try every case. Especially the "write-functions" haven't been tested. Get in touch if you see an issue. This version is not deployed anywhere, because the intended use (cbQoS polling on Cisco 3850) is not working (a Cisco limitation).
+- Version `22.5.2017` with Python 2.x is considered stable, and deployed on at least 3 major networks with 1'000+ devices, WAN and LAN, routers and switches, all Cisco.
 
 Features
 --------
@@ -97,7 +96,7 @@ If you expect any long output, you need to pass “terminal length 0” as first
 command-line CBQoS parser script
 --------------------------------
 
-This script is a utility tool, not directly used within Agent-Jones. It is here to debug / visualize Cisco CBQoS configuration (if you have looked at the CISCO-CLASS-BASED-QOS-MIB, you know what I mean). See `util/qos_parser.py`. You need a virtualenv with `pysnmp` installed to run it, tested with Python 3.6.6 and 3.7.0.
+This script is a utility tool, not directly used within Agent-Jones. It is here to debug / visualize Cisco CBQoS configuration (if you have looked at the CISCO-CLASS-BASED-QOS-MIB, you know what I mean). See `util/qos_parser.py`. You need a virtualenv with `pysnmp` installed to run it, tested with Python 3.7 and 3.8.
 
 Cookbook:
 
@@ -127,7 +126,12 @@ Dependencies
 ------------
 
 - works as a virtualenv to protect your instance from courageaous system-admins using OS-upgrade without too much knowledge.
-- python 3.7 (might work for older 3.x versions if you get the dependencies installed)
+- python 3.7 or 3.8 (might work for older 3.x versions if you get the dependencies installed)
+
+Todo
+----
+
+- See [ToDO](doc/TODO.md)
 
 
 Extension / development

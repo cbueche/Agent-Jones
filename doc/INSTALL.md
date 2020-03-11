@@ -1,24 +1,25 @@
 Installation
 ------------
 
-Installation must be done within a [Python virtual environment](http://www.virtualenv.org/). The goal is to isolate your application from courageous system administrators running OS upgrades without thinking first. The code below is for Python 3.7 on Ubuntu.
+Installation must be done within a [Python virtual environment](http://www.virtualenv.org/). The goal is to isolate your application from courageous system administrators running OS upgrades without thinking first. The code below is for Python 3.7 / 3.8 on Ubuntu.
 
     git clone https://github.com/cbueche/Agent-Jones.git AJ
     cd AJ
+    # choose one of the below
     python3.7 -m venv venv
+    python3.8 -m venv venv
     source venv/bin/activate
     pip install --upgrade pip
+    pip install wheel
     pip install -r deployment/requirements.txt
 
 This command will produce a lot of output with warnings, etc. Look for a similar message at the end :
 
-    Successfully installed Exscript-2.5.7 Flask-1.0.2 Flask-HTTPAuth-3.2.4
-    Flask-RESTful-0.3.6 Jinja2-2.10 MarkupSafe-1.0 PyCrypto-2.6.1 Werkzeug-0.14.1
-    aniso8601-3.0.2 asn1crypto-0.24.0 bcrypt-3.1.4 cffi-1.11.5 click-7.0
-    configparser-3.5.0 cryptography-2.3.1 future-0.16.0 idna-2.7 itsdangerous-0.24
-    netaddr-0.7.19 ordereddict-1.1 paramiko-2.4.2 ply-3.11 pyasn1-0.4.4
-    pycparser-2.19 pycryptodomex-3.6.6 pynacl-1.3.0 pysmi-0.3.1 pysnmp-4.4.6
-    pytz-2018.5 six-1.11.0 snimpy-0.8.12
+    Successfully installed Exscript-2.6.3 Flask-1.1.1 Flask-HTTPAuth-3.3.0 Flask-RESTful-0.3.8
+    Jinja2-2.11.1 MarkupSafe-1.1.1 PyCrypto-2.6.1 Werkzeug-1.0.0 aniso8601-8.0.0 bcrypt-3.1.7
+    cffi-1.14.0 click-7.1.1 configparser-4.0.2 cryptography-2.8 future-0.18.2 itsdangerous-1.1.0
+    netaddr-0.7.19 ordereddict-1.1 paramiko-2.7.1 ply-3.11 pyasn1-0.4.8 pycparser-2.20
+    pycryptodomex-3.9.7 pynacl-1.3.0 pysmi-0.3.4 pysnmp-4.4.12 pytz-2019.3 six-1.14.0 snimpy-0.8.13
 
 Then try to run Agent-Jones :
 
@@ -27,10 +28,6 @@ Then try to run Agent-Jones :
 It will fail with `ImportError: No module named credentials`. It's a sign of success, now go to the **"Configuration"** part below.
 
 Agent-Jones is a WSGI service within Apache, see the files in deployment/ and the WSGI documentation [here](https://github.com/GrahamDumpleton/mod_wsgi) and [here](http://modwsgi.readthedocs.io/en/develop/).
-
-## if you get StopIteration exception
-
-snimpy 0.8.12 wasn't supporting Python 3.7. fixed in snimpy 0.8.13, or [patch](https://github.com/vincentbernat/snimpy/issues/83) manager.py manually.
 
 Platform-specific notes
 -----------------------
@@ -50,7 +47,7 @@ CentOS 7.x:
 Configuration
 -------------
 
-Edit these files to your taste. Copy from the templates and adapt to your own setup.
+Edit these files to your taste. Copy from the `etc/templates/` directory and adapt to your own setup.
 
 	app/etc/environment.conf
     app/etc/config.py
@@ -64,7 +61,7 @@ To get `enterprise-numbers.json`, run this command :
         -i http://www.iana.org/assignments/enterprise-numbers \
         -o enterprise-numbers.json
 
-To give an indication, on 10.10.2018, I got 52'660 entries. You should get a similar number of entries.
+To give an indication, on 11.3.2020, I got 55'312 entries. You should get a similar number of entries.
 
 At run-time, the configuration happens with these steps:
 

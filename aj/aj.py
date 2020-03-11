@@ -19,6 +19,8 @@ Repository & documentation : https://github.com/cbueche/Agent-Jones
 # update doc/RELEASES.md when touching this
 __version__ = '10.10.2018'
 
+import binascii
+
 from flask import Flask, url_for, make_response, jsonify, send_from_directory, request
 from flask import render_template
 from flask.json import loads
@@ -44,6 +46,7 @@ import logging.handlers
 import re
 
 import autovivification
+from collections import defaultdict
 
 # find where we are to create the correct path to the MIBs below and to
 # know where is etc/
@@ -51,7 +54,7 @@ full_path = os.path.realpath(__file__)
 script_path = os.path.split(full_path)[0]
 sys.path.insert(0, script_path + '/etc')
 
-# etc/credentials.py knows how to get the credentials for a device (SNMMP, login, etc)
+# etc/credentials.py knows how to get the credentials for a device (SNMP, login, etc)
 import credentials
 
 # etc/auth_external.py controls how Agent-Jones is accessed
@@ -151,7 +154,7 @@ load(mib_path + "CISCO-CLASS-BASED-QOS-MIB.my")
 # -----------------------------------------------------------------------------------
 class DocCollection():
 
-    apidoc = autovivification.AutoVivification()
+    apidoc = defaultdict(dict)
 
     def add(self, stanza, uri, methods):
 
@@ -2158,9 +2161,21 @@ class OIDpumpAPI(Resource):
             logger.trace('entry=<%s>' % str(entry))
             oid = '.'.join(map(str, entry[0]))
             if type(entry[1]) == tuple:
-                value = '.'.join(map(str, entry[1]))
+                # probably an OID in tuple form
+                value = '.'.join(map(str, list(entry[1])))
+            elif type(entry[1]) == int:
+                value = entry[1]
+            # detect hex-strings, like 1.3.6.1.2.1.2.2.1.6.87 --> entry[1] = b'\x0c\x11g\xb4J\x03'
+            # kind of a hack, we transform to a string --> "b'\\x0c\\x11g\\xb4J\\x03'"
+            # and we try to detect a \x "marker"
+            elif re.search(r'\\x', str(entry[1])):
+                try:
+                    value = binascii.hexlify(entry[1]).decode('utf-8')
+                except Exception as e:
+                    logger.warning("fn=OIDpumpAPI/get : %s : %s %s : bytes decoding failed : %s" % (devicename, pdu, oid, e))
+                    value = entry[1]
             else:
-                value = str(entry[1])
+                value = entry[1].decode('utf-8')
             entries[oid] = value
 
         deviceinfo['data'] = entries
@@ -2414,97 +2429,97 @@ api.add_resource(DeviceAPI,
                  '/aj/api/v1/device/<string:devicename>')
 doc.add(loads(DeviceAPI.__doc__),
         '/aj/api/v1/device/<string:devicename>',
-        DeviceAPI.__dict__['methods'])
+        ['GET'])
 
 api.add_resource(DeviceActionAPI,
                  '/aj/api/v1/device/<string:devicename>/action')
 doc.add(loads(DeviceActionAPI.__doc__),
         '/aj/api/v1/device/<string:devicename>/action',
-        DeviceActionAPI.__dict__['methods'])
+        ['POST'])
 
 api.add_resource(DeviceSaveAPI,
                  '/aj/api/v1/devicesave/<string:devicename>')
 doc.add(loads(DeviceSaveAPI.__doc__),
         '/aj/api/v1/devicesave/<string:devicename>',
-        DeviceSaveAPI.__dict__['methods'])
+        ['PUT'])
 
 api.add_resource(InterfaceAPI,
                  '/aj/api/v1/interfaces/<string:devicename>')
 doc.add(loads(InterfaceAPI.__doc__),
         '/aj/api/v1/interfaces/<string:devicename>',
-        InterfaceAPI.__dict__['methods'])
+        ['GET'])
 
 api.add_resource(InterfaceCounterAPI,
                  '/aj/api/v1/interface/counter/<string:devicename>/<string:ifindex>')
 doc.add(loads(InterfaceCounterAPI.__doc__),
         '/aj/api/v1/interface/counter/<string:devicename>/<string:ifindex>',
-        InterfaceCounterAPI.__dict__['methods'])
+        ['GET'])
 
 api.add_resource(MacAPI,
                  '/aj/api/v1/macs/<string:devicename>')
 doc.add(loads(MacAPI.__doc__),
         '/aj/api/v1/macs/<string:devicename>',
-        MacAPI.__dict__['methods'])
+        ['GET'])
 
 api.add_resource(DHCPsnoopAPI,
                  '/aj/api/v1/dhcpsnoop/<string:devicename>')
 doc.add(loads(DHCPsnoopAPI.__doc__),
         '/aj/api/v1/dhcpsnoop/<string:devicename>',
-        DHCPsnoopAPI.__dict__['methods'])
+        ['GET'])
 
 api.add_resource(vlanlistAPI,
                  '/aj/api/v1/vlans/<string:devicename>')
 doc.add(loads(vlanlistAPI.__doc__),
         '/aj/api/v1/vlans/<string:devicename>',
-        vlanlistAPI.__dict__['methods'])
+        ['GET'])
 
 api.add_resource(PortToVlanAPI,
                  '/aj/api/v1/vlan/<string:devicename>/<string:ifindex>')
 doc.add(loads(PortToVlanAPI.__doc__),
         '/aj/api/v1/vlan/<string:devicename>/<string:ifindex>',
-        PortToVlanAPI.__dict__['methods'])
+        ['PUT'])
 
 api.add_resource(InterfaceConfigAPI,
                  '/aj/api/v1/interface/config/<string:devicename>/<string:ifindex>')
 doc.add(loads(InterfaceConfigAPI.__doc__),
         '/aj/api/v1/interface/config/<string:devicename>/<string:ifindex>',
-        InterfaceConfigAPI.__dict__['methods'])
+        ['PUT'])
 
 api.add_resource(OIDpumpAPI,
                  '/aj/api/v1/oidpump/<string:devicename>/<string:pdu>/<string:oid>')
 doc.add(loads(OIDpumpAPI.__doc__),
         '/aj/api/v1/oidpump/<string:devicename>/<string:pdu>/<string:oid>',
-        OIDpumpAPI.__dict__['methods'])
+        ['GET'])
 
 api.add_resource(DeviceSshAPI,
                  '/aj/api/v1/device/ssh/<string:devicename>')
 doc.add(loads(DeviceSshAPI.__doc__),
         '/aj/api/v1/device/ssh/<string:devicename>',
-        DeviceSshAPI.__dict__['methods'])
+        ['PUT'])
 
 api.add_resource(CDPAPI,
                  '/aj/api/v1/cdp/<string:devicename>')
 doc.add(loads(CDPAPI.__doc__),
         '/aj/api/v1/cdp/<string:devicename>',
-        CDPAPI.__dict__['methods'])
+        ['GET'])
 
 api.add_resource(TrunkAPI,
                  '/aj/api/v1/trunk/<string:devicename>')
 doc.add(loads(TrunkAPI.__doc__),
         '/aj/api/v1/trunk/<string:devicename>',
-        TrunkAPI.__dict__['methods'])
+        ['GET'])
 
 api.add_resource(ARPAPI,
                  '/aj/api/v1/arp/<string:devicename>')
 doc.add(loads(ARPAPI.__doc__),
         '/aj/api/v1/arp/<string:devicename>',
-        ARPAPI.__dict__['methods'])
+        ['GET'])
 
 api.add_resource(QoSAPI,
                  '/aj/api/v1/qos/<string:devicename>')
 doc.add(loads(QoSAPI.__doc__),
         '/aj/api/v1/qos/<string:devicename>',
-        QoSAPI.__dict__['methods'])
+        ['GET'])
 
 # -----------------------------------------------------------------------------------
 # auto-doc for API
