@@ -1,6 +1,16 @@
 Release notes
 =============
 
+
+10.10.2018
+----------
+
+- ported to Python 3.7.
+- add Cisco CBQoS parsing.
+- add `util/qos_parser.py`.
+- upgrade `CISCO-ENTITY-VENDORTYPE-OID-MIB.my`.
+
+
 22.5.2017
 ---------
 

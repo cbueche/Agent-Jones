@@ -17,9 +17,14 @@ Why not use the system  MIBs ?
 
 I'm getting ERROR or WARNING fn=InterfaceAPI/get : devicename : SNMP get failed : long() argument must be a string or a number, not 'NoneType'
 
-Be sure to install the latest version of Agent-Jones. I have added some sanity code to cover Cisco  creativity in dot1dBasePortIfIndex.
+Be sure to install the latest version of Agent-Jones. I have added some sanity code to cover Cisco creativity in dot1dBasePortIfIndex.
 
 I'm getting "EntryPoint object has no attribute resolve". Update setuptools.
+
+## StopIteration exception
+
+- PEP 479 seems to break ProxyIter/iteritems() in snimpy/manager.py.
+- [This patch](https://github.com/vincentbernat/snimpy/issues/83#issue-368722597) is needed, fixed in snimpy 0.8.13
 
 ## Errors with MAC addresses
 

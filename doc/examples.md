@@ -315,3 +315,14 @@ In the response, the `physicalIndex` value can be used to identify the enclosing
     "sysName": "example.device.domain.com"
 }
 ```
+
+
+## Getting the cbQoS information for each interface of a Cisco device
+
+The device must support `CISCO-CLASS-BASED-QOS-MIB`.
+
+### Request
+
+    curl -X "GET" "$AJ_URL/aj/api/v1/qos/$DEVICE" \
+     -u "$AJ_USER:$AJ_PASSWORD"
+

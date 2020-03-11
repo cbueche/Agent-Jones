@@ -52,7 +52,7 @@ class Config(object):
 
     else:
         # some sane feedback
-        logger.warn('Config : unknown system <%s>, using stock ping command' % sysname)
+        logger.warning('Config : unknown system <%s>, using stock ping command' % sysname)
         PING_COMMAND = ["ping", "-c", "5", "-i", "0.3"]
 
 # values for prod

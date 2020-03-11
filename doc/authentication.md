@@ -9,7 +9,7 @@ Agent-Jones is a proxy to network devices. As such, the authentication model is 
 
 ## accessing the Agent-Jones web-service
 
-Agent-Jones is located beyond a WSGI interface, which has to be configured to pass down the Basic-Auth ([RFC 2617](https://www.ietf.org/rfc/rfc2617.txt)) heeaders to the Flask module responsible to check the credentials (flask_httpauth:HTTPBasicAuth). 
+Agent-Jones is located beyond a WSGI interface, which has to be configured to pass down the Basic-Auth ([RFC 2617](https://www.ietf.org/rfc/rfc2617.txt)) headers to the Flask module responsible to check the credentials (flask_httpauth:HTTPBasicAuth). 
 
 For Apache 2.4 and WSGI, the option `WSGIPassAuthorization On` in `deployment/apache_config_example.txt` does exactly this.
 

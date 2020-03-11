@@ -72,10 +72,10 @@ class SysOidAn():
                 vendor = self.enterprises[vendor_id]['o']
             else:
                 vendor = 'unknown vendor (%s)' % vendor_id
-                self.logger.warn(
+                self.logger.warning(
                     'fn=SysOidAn/translate_sysoid : vendor id %s not found, maybe you need to refresh the enterprise-numbers.json file' % vendor_id)
         else:
-            self.logger.warn(
+            self.logger.warning(
                 'fn=SysOidAn/translate_sysoid : broken sysoid string' % sysoid)
             vendor = "unknown"
 

@@ -5,8 +5,6 @@ access_checks.py - SNMP checks
 
 Author : Ch. Bueche
 
-# FIXME : should support SNMP v1 and configurable timeout
-
 '''
 
 import logging
@@ -52,7 +50,7 @@ class AccessChecks():
                     'fn=AccessChecks/SNMP-SET : %s : write success' % devicename)
                 return True
 
-        except Exception, e:
+        except Exception as e:
             if check_type == 'RO':
                 self.logger.error(
                     "fn=AccessChecks/SNMP-GET : %s : read test failed : %s" % (devicename, e))

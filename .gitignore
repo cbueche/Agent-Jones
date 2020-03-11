@@ -12,6 +12,7 @@ aj/etc/enterprise-numbers.json
 
 # virtualenv
 .python-version
+venv
 
 # Pycharm
 .idea

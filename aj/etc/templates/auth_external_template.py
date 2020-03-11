@@ -65,5 +65,5 @@ class AuthExternal():
 			self.logger.debug('authentified by ICAP <%s>' % auth_user)
 			return True
 
-		self.logger.warn('authentification denied')
+		self.logger.warning('authentification denied')
 		return False

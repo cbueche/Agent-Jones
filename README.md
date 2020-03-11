@@ -11,8 +11,8 @@ The whole stuff is written in Python, using the [Flask](http://flask.pocoo.org/)
 Status
 ------
 
-It is deployed in a network with about 1'000 devices, WAN and LAN, routers and switches, all Cisco. It works, but I would gladly accept patches and enhancements.
-
+- Version `11.3.2020` with Python 3.x should be considered as beta, because I could not try every case. Especially the "write-functions" haven't been tested. Get in touch if you see an issue. This version is not deployed anywhere, because the intended use (cbQoS polling on Cisco 3850) is not working (a Cisco limitation).
+- Version `22.5.2017` with Python 2.x is considered stable, and deployed on at least 3 major networks with 1'000+ devices, WAN and LAN, routers and switches, all Cisco.
 
 Features
 --------
@@ -31,6 +31,8 @@ Features
 - Get the interface counters of one interface.
 - Get the ARP table (MAC to IP).
 - SNMP get or walk on a OID
+- CBQoS (Class-Based Quality of Service) information for each interface.
+- command-line CBQoS parser script. 
 - Run commands over SSH
 
 
@@ -91,6 +93,23 @@ If you expect any long output, you need to pass “terminal length 0” as first
 [See more examples](doc/examples.md).
 
 
+command-line CBQoS parser script
+--------------------------------
+
+This script is a utility tool, not directly used within Agent-Jones. It is here to debug / visualize Cisco CBQoS configuration (if you have looked at the CISCO-CLASS-BASED-QOS-MIB, you know what I mean). See `util/qos_parser.py`. You need a virtualenv with `pysnmp` installed to run it, tested with Python 3.7 and 3.8.
+
+Cookbook:
+
+```
+python3 -m venv utilvenv
+source utilvenv/bin/activate
+pip install pysnmp
+python3 ./qos_parser.py -c community -d device -p 161 -j /tmp/output.json [-D]
+```
+
+The JSON output file is similar to what Agent-Jones provides with the `/qos/` API endpoint.
+
+
 API Documentation
 -----------------
 
@@ -107,7 +126,12 @@ Dependencies
 ------------
 
 - works as a virtualenv to protect your instance from courageaous system-admins using OS-upgrade without too much knowledge.
-- python 2.7 (might work for 2.6)
+- python 3.7 or 3.8 (might work for older 3.x versions if you get the dependencies installed)
+
+Todo
+----
+
+- See [ToDO](doc/TODO.md)
 
 
 Extension / development
